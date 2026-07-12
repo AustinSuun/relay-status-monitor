@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { StatusDot } from '@/components/StatusBadge';
 import { cn } from '@/lib/utils';
-import { formatGroupMultiplier, getKeyDisplayName, getKeyGroupLabel } from '@/lib/key-display';
+import { formatGroupMultiplier, getKeyDisplayName } from '@/lib/key-display';
 import { PageHeader } from '@/components/page-header';
 import { Skeleton } from '@/components/ui/skeleton';
 import { beginLatestRequest } from '@/lib/request-sequence';
@@ -26,6 +26,7 @@ interface DashboardItem {
   groupDescription: string | null;
   groupRateMultiplier: number | null;
   remoteKeyId: string | null;
+  upstreamBalance: number | null;
   hasApiKey: boolean;
   hasAccessToken: boolean;
   status: string;
@@ -171,7 +172,7 @@ export default function DashboardPage() {
       {/* 统计卡 */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatCard label="上游/分组" value={`${summary.total}/${summary.totalKeys}`} sub={`${summary.online} 在线 · ${summary.degraded} 降级 · ${summary.offline} 离线`} icon={Server} />
-        <StatCard label="总余额" value={`$${summary.totalBalance.toFixed(2)}`} sub="所有分组余额之和" icon={Wallet} />
+        <StatCard label="总余额" value={`$${summary.totalBalance.toFixed(2)}`} sub="所有上游余额合计" icon={Wallet} />
         <StatCard label="整体可用率" value={`${summary.availability}%`} sub="最近 24 小时" icon={TrendingUp}
           highlight={summary.availability >= 99 ? 'good' : summary.availability >= 95 ? 'warn' : 'bad'} />
         <StatCard label="未解决告警" value={String(summary.openIncidents)} sub={summary.openIncidents > 0 ? '需关注' : '一切正常'} icon={Bell}
@@ -263,9 +264,6 @@ function UpstreamGroupSection({ group, trends }: { group: DashboardGroup; trends
                 ${group.totalBalance.toFixed(2)}
               </div>
             </div>
-            {group.items.map((item) => (
-              <MultiplierBadge key={item.keyId} item={item} compact />
-            ))}
           </div>
         </div>
         <div className="min-w-[280px] flex-1 sm:max-w-[520px]">
@@ -326,7 +324,6 @@ function AvailabilityBar({ group }: { group: DashboardGroup }) {
 
 function GroupCard({ item, trend }: { item: DashboardItem; trend: TrendPoint[] }) {
   const displayName = getKeyDisplayName(item);
-  const groupName = getKeyGroupLabel(item);
 
   return (
     <Link href={`/upstreams/${item.upstreamId}`} className="block">
@@ -340,12 +337,6 @@ function GroupCard({ item, trend }: { item: DashboardItem; trend: TrendPoint[] }
               <div className="flex items-center gap-2">
                 <StatusDot status={item.status} />
                 <span className="truncate font-semibold" title={displayName}>{displayName}</span>
-              </div>
-              <div className="mt-0.5 min-w-0 text-xs text-muted-foreground">
-                <div className="truncate" title={groupName}>分组：{groupName}</div>
-                {item.groupDescription ? (
-                  <div className="truncate" title={item.groupDescription}>{item.groupDescription}</div>
-                ) : null}
               </div>
             </div>
             <StatusChip status={item.status} incidents={item.openIncidents} />
@@ -396,30 +387,23 @@ function StatusChip({ status, incidents }: { status: string; incidents: number }
   );
 }
 
-function MultiplierBadge({ item, compact = false }: { item: DashboardItem; compact?: boolean }) {
+function MultiplierBadge({ item }: { item: DashboardItem }) {
   const multiplier = getDisplayMultiplier(item);
-  const isMissing = multiplier.value === '未获取';
   const className = multiplier.source === '官方同步'
     ? 'border-transparent bg-success/10 text-success shadow-[0_0_18px_rgba(34,197,94,0.20)]'
     : multiplier.source === '名称解析'
       ? 'border-transparent bg-cyan-500/10 text-cyan-600 shadow-[0_0_18px_rgba(6,182,212,0.22)] dark:text-cyan-300'
       : 'border-transparent bg-muted text-muted-foreground';
-  const label = compact ? `${getKeyDisplayName(item)} ${multiplier.value}` : multiplier.value;
 
   return (
     <div className="inline-flex min-w-0 flex-col items-start">
       <Badge
         variant="outline"
         className={cn('max-w-full rounded-md px-2 py-1 font-mono text-[12px] font-black', className)}
-        title={`${getKeyDisplayName(item)} · ${multiplier.value} · ${multiplier.source}`}
+        title={multiplier.value}
       >
-        <span className="truncate">{label}</span>
+        <span className="truncate">{multiplier.value}</span>
       </Badge>
-      {!compact && (
-        <span className={cn('mt-0.5 text-[10px] leading-none', isMissing ? 'text-muted-foreground' : 'text-muted-foreground')}>
-          {multiplier.source}
-        </span>
-      )}
     </div>
   );
 }
@@ -480,7 +464,7 @@ function groupDashboardItems(items: DashboardItem[]): DashboardGroup[] {
     const existing = map.get(item.upstreamId);
     if (existing) {
       existing.items.push(item);
-      existing.totalBalance += item.balance || 0;
+      if (existing.totalBalance <= 0 && item.upstreamBalance != null) existing.totalBalance = item.upstreamBalance;
       existing.openIncidents += item.openIncidents;
       if (hasDisplayMultiplier(item)) existing.knownMultiplierCount += 1;
       if (isOnlineStatus(item.status)) existing.onlineCount += 1;
@@ -497,7 +481,7 @@ function groupDashboardItems(items: DashboardItem[]): DashboardGroup[] {
       baseUrl: item.baseUrl,
       type: item.type,
       items: [item],
-      totalBalance: item.balance || 0,
+      totalBalance: item.upstreamBalance ?? item.balance ?? 0,
       avgLatencyMs: null,
       openIncidents: item.openIncidents,
       knownMultiplierCount: hasDisplayMultiplier(item) ? 1 : 0,

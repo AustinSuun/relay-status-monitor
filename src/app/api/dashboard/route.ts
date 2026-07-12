@@ -24,10 +24,8 @@ export async function GET() {
   const degraded = upstreams.filter((u) => u.status === 'DEGRADED').length;
   const offline = upstreams.filter((u) => u.status === 'OFFLINE').length;
 
-  // 从所有 keys 聚合余额
-  const allKeys = upstreams.flatMap((u) => u.keys);
-  const balanceKeys = allKeys.filter((k) => k.lastBalance !== null);
-  const totalBalance = balanceKeys.reduce((s, k) => s + (k.lastBalance || 0), 0);
+  const visibleKeyGroups = upstreams.flatMap((u) => u.keys.filter((k) => !isWalletBalanceKey(k)));
+  const totalBalance = upstreams.reduce((sum, upstream) => sum + (getUpstreamBalance(upstream.keys) ?? 0), 0);
 
   // 最近 24 小时采集成功率
   const oneDayAgo = new Date(Date.now() - 86400000);
@@ -42,10 +40,11 @@ export async function GET() {
 
   const openIncidents = await prisma.incident.count({ where: { resolved: false } });
 
-  // 按 key 粒度展开列表
+  // 按真实分组粒度展开列表；钱包余额只作为站点余额来源，不单独展示为分组。
   const list = [];
   for (const u of upstreams) {
-    for (const k of u.keys) {
+    const upstreamBalance = getUpstreamBalance(u.keys);
+    for (const k of u.keys.filter((key) => !isWalletBalanceKey(key))) {
       list.push({
         keyId: k.id,
         upstreamId: u.id,
@@ -59,6 +58,7 @@ export async function GET() {
         groupDescription: k.groupDescription,
         groupRateMultiplier: k.groupRateMultiplier,
         remoteKeyId: k.remoteKeyId,
+        upstreamBalance,
         status: k.status,
         balance: k.lastBalance,
         latencyMs: k.lastLatencyMs,
@@ -78,11 +78,22 @@ export async function GET() {
       online,
       degraded,
       offline,
-      totalKeys: allKeys.length,
+      totalKeys: visibleKeyGroups.length,
       totalBalance: Math.round(totalBalance * 100) / 100,
       availability: Math.round(availability * 10) / 10,
       openIncidents,
     },
     items: list,
   });
+}
+
+function isWalletBalanceKey(key: { group?: string | null; label?: string | null; keyName?: string | null; groupName?: string | null }) {
+  return [key.group, key.label, key.keyName, key.groupName]
+    .some((value) => value?.trim() === '钱包余额');
+}
+
+function getUpstreamBalance(keys: Array<{ lastBalance: number | null; group?: string | null; label?: string | null; keyName?: string | null; groupName?: string | null }>) {
+  const walletBalance = keys.find((key) => isWalletBalanceKey(key) && key.lastBalance !== null)?.lastBalance;
+  if (walletBalance !== undefined) return walletBalance;
+  return keys.find((key) => key.lastBalance !== null)?.lastBalance ?? null;
 }
