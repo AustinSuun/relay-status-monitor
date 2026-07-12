@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security report
+    url: https://github.com/yigehaozi/relay-status-monitor/security/advisories/new
+    about: 请通过私密安全公告报告漏洞，不要在公开 Issue 中提交凭证或生产数据。

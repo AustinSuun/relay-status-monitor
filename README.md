@@ -3,6 +3,7 @@
 一个面向 AI API 中转站的自托管状态监控面板。它可以统一管理多个 SUB2API 与 New API 上游，按 Key/分组采集余额、延迟、可用率和模型测速数据，并通过告警规则与飞书 Webhook 发送异常通知。
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![CI](https://github.com/yigehaozi/relay-status-monitor/actions/workflows/ci.yml/badge.svg)](https://github.com/yigehaozi/relay-status-monitor/actions/workflows/ci.yml)
 [![Next.js](https://img.shields.io/badge/Next.js-14-black.svg)](https://nextjs.org/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-required-336791.svg)](https://www.postgresql.org/)
 
@@ -315,6 +316,8 @@ pnpm start
 3. 提交前运行代码检查和生产构建。
 4. 确认提交中不含 `.env`、数据库导出、真实截图、运行日志或凭证。
 5. 创建 Pull Request，说明问题、方案、验证方式和兼容性影响。
+
+更多协作规则见 [贡献指南](CONTRIBUTING.md)、[安全策略](SECURITY.md) 和 [行为准则](CODE_OF_CONDUCT.md)。版本变化见 [CHANGELOG](CHANGELOG.md)。
 
 ## License
 
