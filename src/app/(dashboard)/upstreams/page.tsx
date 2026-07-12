@@ -1,8 +1,9 @@
 'use client';
 
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { Plus, Pencil, Trash2, Zap, KeyRound, RefreshCw, Server } from 'lucide-react';
+import { Plus, Pencil, Trash2, Zap, KeyRound, RefreshCw, Server, WandSparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -12,7 +13,7 @@ import { Separator } from '@/components/ui/separator';
 import { StatusDot } from '@/components/StatusBadge';
 import { useConfirm } from '@/components/confirm-dialog';
 import { toast } from 'sonner';
-import { formatGroupMultiplier, getKeyDisplayName, getKeyGroupLabel } from '@/lib/key-display';
+import { formatGroupMultiplier, getKeyDisplayName, getKeyGroupLabel, isWalletBalanceKey } from '@/lib/key-display';
 import { beginLatestRequest } from '@/lib/request-sequence';
 import {
   UpstreamsDataTable,
@@ -187,7 +188,8 @@ function UpstreamFormDialog({ upstream, onClose, onSaved }: {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setError(''); setSaving(true);
+    setError('');
+    setSaving(true);
     try {
       const body = { name, baseUrl, type, testModel, enabled };
       const url = upstream ? `/api/upstreams/${upstream.id}` : '/api/upstreams';
@@ -317,21 +319,48 @@ function KeyManager({ upstreamId, type }: { upstreamId: number; type: string }) 
 
   if (loading) return <div className="text-sm text-muted-foreground">加载分组…</div>;
 
+  const visibleKeys = keys.filter((key) => !isWalletBalanceKey(key));
+
   return (
     <div className="space-y-3">
       {dialog}
+      <div className="rounded-xl bg-muted/35 p-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 text-sm font-semibold">
+              <WandSparkles className="h-4 w-4 text-cyan-500" />
+              自动获取分组
+              <Badge variant="outline" className="rounded-md border-cyan-500/30 bg-cyan-500/10 text-cyan-600 dark:text-cyan-300">
+                待接入
+              </Badge>
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              后续通过厂商 API 密钥读取全部可用分组、倍率和平台信息；钱包余额只同步为厂商余额，不作为分组展示。
+            </p>
+          </div>
+          <Button size="sm" variant="outline" disabled>
+            <RefreshCw data-icon="inline-start" />
+            一键获取
+          </Button>
+        </div>
+        <div className="mt-3 grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+          <Input disabled type="password" placeholder="厂商 API 密钥（接口接入后启用）" />
+          <Button disabled variant="secondary">验证并导入</Button>
+        </div>
+      </div>
+
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold flex items-center gap-1.5"><KeyRound className="h-4 w-4" />分组密钥</h3>
+        <h3 className="flex items-center gap-1.5 text-sm font-semibold"><KeyRound className="h-4 w-4" />手动分组密钥</h3>
         <Button size="sm" variant="outline" onClick={() => { setEditingKey(null); setShowKeyForm(true); }}>
           <Plus data-icon="inline-start" />
           添加分组
         </Button>
       </div>
-      {keys.length === 0 ? (
-        <p className="py-4 text-center text-sm text-muted-foreground">暂无分组</p>
+      {visibleKeys.length === 0 ? (
+        <p className="rounded-xl bg-background/55 py-6 text-center text-sm text-muted-foreground">暂无可展示分组</p>
       ) : (
         <div className="space-y-2">
-          {keys.map((k) => (
+          {visibleKeys.map((k) => (
             <div key={k.id} className="flex flex-col items-stretch gap-3 rounded-lg border p-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex min-w-0 items-center gap-2">
                 <StatusDot status={k.status} />
@@ -412,7 +441,12 @@ function KeyFormDialog({ upstreamId, upstreamType, keyData, onClose, onSaved }: 
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setError(''); setSaving(true);
+    setError('');
+    if (isWalletBalanceKey({ group })) {
+      setError('钱包余额用于厂商余额同步，不作为普通分组添加。');
+      return;
+    }
+    setSaving(true);
     try {
       const body: Record<string, unknown> = { group, label, userId };
       if (apiKey) body.apiKey = apiKey;

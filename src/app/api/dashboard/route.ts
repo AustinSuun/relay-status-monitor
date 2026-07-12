@@ -41,6 +41,23 @@ export async function GET() {
 
   const openIncidents = await prisma.incident.count({ where: { resolved: false } });
 
+  const upstreamList = upstreams.map((u) => {
+    const upstreamBalance = getUpstreamDisplayBalance(u.keys);
+    const balanceKey = getUpstreamDisplayBalanceKey(u.keys);
+    const visibleKeys = u.keys.filter((key) => !isWalletBalanceKey(key));
+
+    return {
+      upstreamId: u.id,
+      upstreamName: u.name,
+      baseUrl: u.baseUrl,
+      type: u.type,
+      status: u.status,
+      totalBalance: Math.round((upstreamBalance ?? 0) * 100) / 100,
+      balanceKeyId: balanceKey?.id ?? null,
+      visibleKeyCount: visibleKeys.length,
+    };
+  });
+
   // 按真实分组粒度展开列表；钱包余额只作为站点余额来源，不单独展示为分组。
   const list = [];
   for (const u of upstreams) {
@@ -85,6 +102,7 @@ export async function GET() {
       availability: Math.round(availability * 10) / 10,
       openIncidents,
     },
+    upstreams: upstreamList,
     items: list,
   });
 }

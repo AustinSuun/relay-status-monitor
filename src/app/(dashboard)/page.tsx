@@ -70,7 +70,19 @@ interface DashboardData {
     availability: number;
     openIncidents: number;
   };
+  upstreams: DashboardUpstream[];
   items: DashboardItem[];
+}
+
+interface DashboardUpstream {
+  upstreamId: number;
+  upstreamName: string;
+  baseUrl: string;
+  type: string;
+  status: string;
+  totalBalance: number;
+  balanceKeyId: number | null;
+  visibleKeyCount: number;
 }
 
 interface DashboardIncident {
@@ -150,10 +162,10 @@ export default function DashboardPage() {
       setIncidents(Array.isArray(incidentJson) ? incidentJson : []);
 
       const trendKeyIds = Array.from(new Set(
-        (json.items as DashboardItem[]).flatMap((item) => [
-          item.keyId,
-          item.upstreamBalanceKeyId,
-        ]).filter((id): id is number => typeof id === 'number'),
+        [
+          ...(json.items as DashboardItem[]).flatMap((item) => [item.keyId, item.upstreamBalanceKeyId]),
+          ...((json.upstreams || []) as DashboardUpstream[]).map((upstream) => upstream.balanceKeyId),
+        ].filter((id): id is number => typeof id === 'number'),
       ));
 
       const trendResults = await Promise.all(
@@ -210,7 +222,10 @@ export default function DashboardPage() {
       )}
     />
   );
-  const groupedUpstreams = useMemo(() => groupDashboardItems(data?.items ?? []), [data?.items]);
+  const groupedUpstreams = useMemo(
+    () => groupDashboardItems(data?.upstreams ?? [], data?.items ?? []),
+    [data?.upstreams, data?.items],
+  );
 
   if (loading && !data) {
     return (
@@ -274,7 +289,7 @@ export default function DashboardPage() {
 
       <div>
         <h2 className="mb-3 text-sm font-semibold text-muted-foreground">分组状态</h2>
-        {data.items.length === 0 ? (
+        {groupedUpstreams.length === 0 ? (
           <Card>
             <CardContent className="p-12 text-center text-muted-foreground">
               暂无监控数据，去
@@ -572,6 +587,11 @@ function AnnouncementPanel() {
 }
 
 function UpstreamGroupSection({ group, trends }: { group: DashboardGroup; trends: Record<number, TrendPoint[]> }) {
+  const displayGroupCount = Math.max(group.items.length, 1);
+  const displayUsableCount = group.items.length > 0
+    ? group.usableCount
+    : group.availabilityPct >= 80 ? 1 : 0;
+
   return (
     <section className="rounded-2xl bg-gradient-to-br from-card via-card to-muted/30 p-5 shadow-sm ring-1 ring-border/40">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-x-5 gap-y-3">
@@ -585,8 +605,8 @@ function UpstreamGroupSection({ group, trends }: { group: DashboardGroup; trends
         </div>
 
         <div className="flex flex-wrap items-center justify-end gap-x-4 gap-y-2">
-          <InlineMetric label="可用" value={`${group.usableCount}/${group.items.length}`} strong={group.availabilityPct >= 80} />
-          <InlineMetric label="倍率" value={`${group.knownMultiplierCount}/${group.items.length}`} strong={group.knownMultiplierCount === group.items.length} />
+          <InlineMetric label="可用" value={`${displayUsableCount}/${displayGroupCount}`} strong={group.availabilityPct >= 80} />
+          <InlineMetric label="倍率" value={`${group.knownMultiplierCount}/${displayGroupCount}`} strong={group.items.length > 0 && group.knownMultiplierCount === group.items.length} />
           <InlineMetric label="均延迟" value={group.avgLatencyMs != null ? `${group.avgLatencyMs}ms` : '—'} />
           <InlineMetric label="可用率" value={`${group.availabilityPct}%`} strong={group.availabilityPct >= 80} />
           <div className="min-w-24 border-l border-border/50 pl-4 text-right">
@@ -601,9 +621,15 @@ function UpstreamGroupSection({ group, trends }: { group: DashboardGroup; trends
         </div>
       </div>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-        {group.items.map((item) => (
-          <GroupCard key={item.keyId} item={item} trend={trends[item.keyId] || []} />
-        ))}
+        {group.items.length > 0 ? (
+          group.items.map((item) => (
+            <GroupCard key={item.keyId} item={item} trend={trends[item.keyId] || []} />
+          ))
+        ) : (
+          <div className="rounded-xl bg-background/55 px-4 py-5 text-sm text-muted-foreground">
+            暂无可展示分组，仅展示厂商余额和状态。
+          </div>
+        )}
       </div>
     </section>
   );
@@ -754,43 +780,44 @@ function getTimelineState(point: TrendPoint | null, currentStatus: 'ONLINE' | 'D
   return 'empty';
 }
 
-function groupDashboardItems(items: DashboardItem[]): DashboardGroup[] {
+function groupDashboardItems(upstreams: DashboardUpstream[], items: DashboardItem[]): DashboardGroup[] {
   const map = new Map<number, DashboardGroup>();
+
+  for (const upstream of upstreams) {
+    map.set(upstream.upstreamId, {
+      upstreamId: upstream.upstreamId,
+      upstreamName: upstream.upstreamName,
+      baseUrl: upstream.baseUrl,
+      type: upstream.type,
+      items: [],
+      totalBalance: upstream.totalBalance,
+      balanceKeyId: upstream.balanceKeyId,
+      avgLatencyMs: null,
+      openIncidents: 0,
+      knownMultiplierCount: 0,
+      onlineCount: 0,
+      degradedCount: 0,
+      offlineCount: 0,
+      unknownCount: 0,
+      usableCount: 0,
+      availabilityPct: isUsableStatus(upstream.status) ? 100 : 0,
+    });
+  }
 
   for (const item of items) {
     const existing = map.get(item.upstreamId);
-    if (existing) {
-      existing.items.push(item);
-      if (existing.totalBalance <= 0 && item.upstreamBalance != null) existing.totalBalance = item.upstreamBalance;
-      if (existing.balanceKeyId == null && item.upstreamBalanceKeyId != null) existing.balanceKeyId = item.upstreamBalanceKeyId;
-      existing.openIncidents += item.openIncidents;
-      if (hasDisplayMultiplier(item)) existing.knownMultiplierCount += 1;
-      if (isOnlineStatus(item.status)) existing.onlineCount += 1;
-      if (normalizeStatus(item.status) === 'DEGRADED') existing.degradedCount += 1;
-      if (normalizeStatus(item.status) === 'OFFLINE') existing.offlineCount += 1;
-      if (normalizeStatus(item.status) === 'UNKNOWN') existing.unknownCount += 1;
-      if (isUsableStatus(item.status)) existing.usableCount += 1;
-      continue;
-    }
+    if (!existing) continue;
 
-    map.set(item.upstreamId, {
-      upstreamId: item.upstreamId,
-      upstreamName: item.upstreamName,
-      baseUrl: item.baseUrl,
-      type: item.type,
-      items: [item],
-      totalBalance: item.upstreamBalance ?? item.balance ?? 0,
-      balanceKeyId: item.upstreamBalanceKeyId ?? item.keyId,
-      avgLatencyMs: null,
-      openIncidents: item.openIncidents,
-      knownMultiplierCount: hasDisplayMultiplier(item) ? 1 : 0,
-      onlineCount: isOnlineStatus(item.status) ? 1 : 0,
-      degradedCount: normalizeStatus(item.status) === 'DEGRADED' ? 1 : 0,
-      offlineCount: normalizeStatus(item.status) === 'OFFLINE' ? 1 : 0,
-      unknownCount: normalizeStatus(item.status) === 'UNKNOWN' ? 1 : 0,
-      usableCount: isUsableStatus(item.status) ? 1 : 0,
-      availabilityPct: 0,
-    });
+    existing.items.push(item);
+    if (existing.totalBalance <= 0 && item.upstreamBalance != null) existing.totalBalance = item.upstreamBalance;
+    if (existing.balanceKeyId == null && item.upstreamBalanceKeyId != null) existing.balanceKeyId = item.upstreamBalanceKeyId;
+    existing.openIncidents += item.openIncidents;
+    if (hasDisplayMultiplier(item)) existing.knownMultiplierCount += 1;
+    if (isOnlineStatus(item.status)) existing.onlineCount += 1;
+    if (normalizeStatus(item.status) === 'DEGRADED') existing.degradedCount += 1;
+    if (normalizeStatus(item.status) === 'OFFLINE') existing.offlineCount += 1;
+    if (normalizeStatus(item.status) === 'UNKNOWN') existing.unknownCount += 1;
+    if (isUsableStatus(item.status)) existing.usableCount += 1;
   }
 
   return Array.from(map.values()).map((group) => {
@@ -804,7 +831,9 @@ function groupDashboardItems(items: DashboardItem[]): DashboardGroup[] {
       avgLatencyMs: latencyValues.length
         ? Math.round(latencyValues.reduce((sum, value) => sum + value, 0) / latencyValues.length)
         : null,
-      availabilityPct: Math.round((group.usableCount / Math.max(group.items.length, 1)) * 100),
+      availabilityPct: group.items.length > 0
+        ? Math.round((group.usableCount / group.items.length) * 100)
+        : group.availabilityPct,
     };
   });
 }
