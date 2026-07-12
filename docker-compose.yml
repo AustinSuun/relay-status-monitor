@@ -28,8 +28,23 @@ services:
       DATABASE_URL: postgresql://relay_status:${POSTGRES_PASSWORD}@relay-status-postgres:5432/relay_status?schema=public
       PORT: 3000
       HOSTNAME: 0.0.0.0
+    volumes:
+      - .:/app
+      - relay_status_node_modules:/app/node_modules
+      - relay_status_next:/app/.next
     ports:
       - "127.0.0.1:3200:3000"
+    command: >
+      sh -c "until pg_isready -h relay-status-postgres -p 5432 -U relay_status; do sleep 2; done;
+      corepack enable && corepack prepare pnpm@9 --activate &&
+      pnpm install --frozen-lockfile &&
+      pnpm db:generate &&
+      pnpm build &&
+      pnpm db:push &&
+      pnpm db:seed &&
+      pnpm start -p 3000"
 
 volumes:
   relay_status_pgdata:
+  relay_status_node_modules:
+  relay_status_next:

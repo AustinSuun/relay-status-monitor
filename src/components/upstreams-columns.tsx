@@ -25,7 +25,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { StatusBadge, StatusDot } from '@/components/StatusBadge';
-import { formatGroupMultiplier, getKeyDisplayName, getKeyGroupLabel } from '@/lib/key-display';
+import { formatGroupMultiplier, getKeyDisplayName, getKeyGroupLabel, getUpstreamDisplayBalance, isWalletBalanceKey } from '@/lib/key-display';
 
 export interface UpstreamKeyRow {
   id: number;
@@ -79,18 +79,7 @@ export const UPSTREAM_COLUMN_LABELS: Record<string, string> = {
 
 export function getUpstreamTotalBalance(upstream: UpstreamRow): number | null {
   if (upstream.totalBalance != null) return upstream.totalBalance;
-
-  let hasBalance = false;
-  let total = 0;
-
-  for (const key of upstream.keys || []) {
-    if (key.lastBalance != null) {
-      hasBalance = true;
-      total += key.lastBalance;
-    }
-  }
-
-  return hasBalance ? total : null;
+  return getUpstreamDisplayBalance(upstream.keys || []);
 }
 
 function SortableHeader({
@@ -224,7 +213,7 @@ export function createUpstreamColumns(
       id: 'groups',
       header: '密钥信息',
       cell: ({ row }) => {
-        const enabledKeys = (row.original.keys || []).filter((key) => key.enabled);
+        const enabledKeys = (row.original.keys || []).filter((key) => key.enabled && !isWalletBalanceKey(key));
 
         return enabledKeys.length === 0 ? (
           <span className="text-xs text-muted-foreground">无</span>

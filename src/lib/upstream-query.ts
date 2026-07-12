@@ -1,4 +1,5 @@
 import type { Prisma, UpstreamStatus, UpstreamType } from '@prisma/client';
+import { getUpstreamDisplayBalance } from '@/lib/key-display';
 
 const UPSTREAM_TYPES = ['SUB2API', 'NEW_API'] as const satisfies readonly UpstreamType[];
 const UPSTREAM_STATUSES = [
@@ -120,11 +121,15 @@ export function buildUpstreamOrderBy(
 }
 
 export function calculateTotalBalance(
-  keys: readonly { lastBalance: number | null }[]
+  keys: readonly {
+    lastBalance: number | null;
+    group?: string | null;
+    label?: string | null;
+    keyName?: string | null;
+    groupName?: string | null;
+  }[]
 ): number {
-  return keys.reduce((total, key) => {
-    return total + (Number.isFinite(key.lastBalance) ? (key.lastBalance as number) : 0);
-  }, 0);
+  return getUpstreamDisplayBalance(keys) ?? 0;
 }
 
 export function sortAndPaginateByBalance<

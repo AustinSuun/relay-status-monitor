@@ -1,8 +1,25 @@
 'use client';
 
-import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef, type ComponentType } from 'react';
 import Link from 'next/link';
-import { Server, Wallet, TrendingUp, Bell, RefreshCw, LayoutDashboard, AlertCircle } from 'lucide-react';
+import {
+  Server,
+  Wallet,
+  TrendingUp,
+  Bell,
+  RefreshCw,
+  LayoutDashboard,
+  AlertCircle,
+  Megaphone,
+  Activity,
+} from 'lucide-react';
+import {
+  AreaChart,
+  Area,
+  YAxis,
+  Tooltip,
+  ResponsiveContainer,
+} from 'recharts';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -27,6 +44,7 @@ interface DashboardItem {
   groupRateMultiplier: number | null;
   remoteKeyId: string | null;
   upstreamBalance: number | null;
+  upstreamBalanceKeyId: number | null;
   hasApiKey: boolean;
   hasAccessToken: boolean;
   status: string;
@@ -40,10 +58,27 @@ interface DashboardItem {
 
 interface DashboardData {
   summary: {
-    total: number; online: number; degraded: number; offline: number;
-    totalKeys: number; totalBalance: number; availability: number; openIncidents: number;
+    total: number;
+    online: number;
+    degraded: number;
+    offline: number;
+    totalKeys: number;
+    totalBalance: number;
+    availability: number;
+    openIncidents: number;
   };
   items: DashboardItem[];
+}
+
+interface DashboardIncident {
+  id: number;
+  type: string;
+  severity: string;
+  message: string;
+  resolved: boolean;
+  createdAt: string;
+  upstream?: { id: number; name: string; baseUrl: string } | null;
+  upstreamKey?: { id: number; group: string } | null;
 }
 
 interface DashboardGroup {
@@ -53,6 +88,7 @@ interface DashboardGroup {
   type: string;
   items: DashboardItem[];
   totalBalance: number;
+  balanceKeyId: number | null;
   avgLatencyMs: number | null;
   openIncidents: number;
   knownMultiplierCount: number;
@@ -70,9 +106,15 @@ type TrendPoint = {
   success: boolean | null;
 };
 
+type BalanceChartPoint = {
+  index: number;
+  balance: number | null;
+};
+
 export default function DashboardPage() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [trends, setTrends] = useState<Record<number, TrendPoint[]>>({});
+  const [incidents, setIncidents] = useState<DashboardIncident[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -82,23 +124,39 @@ export default function DashboardPage() {
     const isCurrent = beginLatestRequest(requestSequence);
     setError(null);
     try {
-      const res = await fetch('/api/dashboard');
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error || '获取总览失败');
+      const [dashboardRes, incidentRes] = await Promise.all([
+        fetch('/api/dashboard'),
+        fetch('/api/incidents?resolved=false&limit=5').catch(() => null),
+      ]);
+      const json = await dashboardRes.json();
+      if (!dashboardRes.ok) throw new Error(json.error || '获取总览失败');
+
+      const incidentJson = incidentRes?.ok ? await incidentRes.json().catch(() => []) : [];
       if (!isCurrent()) return;
       setData(json);
-      // 拉取各 key 的趋势
+      setIncidents(Array.isArray(incidentJson) ? incidentJson : []);
+
+      const trendKeyIds = Array.from(new Set(
+        (json.items as DashboardItem[]).flatMap((item) => [
+          item.keyId,
+          item.upstreamBalanceKeyId,
+        ]).filter((id): id is number => typeof id === 'number'),
+      ));
+
       const trendResults = await Promise.all(
-        (json.items as DashboardItem[]).map(async (item) => {
+        trendKeyIds.map(async (keyId) => {
           try {
-            const r = await fetch(`/api/metrics?upstreamKeyId=${item.keyId}&hours=6&limit=200`);
+            const r = await fetch(`/api/metrics?upstreamKeyId=${keyId}&hours=6&limit=200`);
             const metrics = await r.json();
-            return [item.keyId, metrics.map((m: Record<string, unknown>) => ({
+            const points: TrendPoint[] = Array.isArray(metrics) ? metrics.map((m: Record<string, unknown>) => ({
               balance: typeof m.balance === 'number' ? m.balance : null,
               latencyMs: typeof m.latencyMs === 'number' ? m.latencyMs : null,
               success: typeof m.success === 'boolean' ? m.success : null,
-            }))] as const;
-          } catch { return [item.keyId, []] as const; }
+            })) : [];
+            return [keyId, points] as const;
+          } catch {
+            return [keyId, [] as TrendPoint[]] as const;
+          }
         })
       );
       if (!isCurrent()) return;
@@ -115,7 +173,11 @@ export default function DashboardPage() {
     }
   }, []);
 
-  useEffect(() => { fetchData(); const t = setInterval(fetchData, 30000); return () => clearInterval(t); }, [fetchData]);
+  useEffect(() => {
+    fetchData();
+    const t = setInterval(fetchData, 30000);
+    return () => clearInterval(t);
+  }, [fetchData]);
 
   const pageHeader = (
     <PageHeader
@@ -169,24 +231,42 @@ export default function DashboardPage() {
     <div className="space-y-6">
       {pageHeader}
 
-      {/* 统计卡 */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatCard label="上游/分组" value={`${summary.total}/${summary.totalKeys}`} sub={`${summary.online} 在线 · ${summary.degraded} 降级 · ${summary.offline} 离线`} icon={Server} />
-        <StatCard label="总余额" value={`$${summary.totalBalance.toFixed(2)}`} sub="所有上游余额合计" icon={Wallet} />
-        <StatCard label="整体可用率" value={`${summary.availability}%`} sub="最近 24 小时" icon={TrendingUp}
-          highlight={summary.availability >= 99 ? 'good' : summary.availability >= 95 ? 'warn' : 'bad'} />
-        <StatCard label="未解决告警" value={String(summary.openIncidents)} sub={summary.openIncidents > 0 ? '需关注' : '一切正常'} icon={Bell}
-          highlight={summary.openIncidents === 0 ? 'good' : 'bad'} />
+        <StatCard label="总余额" value={formatCurrency(summary.totalBalance)} sub="按站点余额去重汇总" icon={Wallet} />
+        <StatCard
+          label="整体可用率"
+          value={`${summary.availability}%`}
+          sub="最近 24 小时"
+          icon={TrendingUp}
+          highlight={summary.availability >= 99 ? 'good' : summary.availability >= 95 ? 'warn' : 'bad'}
+        />
+        <StatCard
+          label="未处理告警"
+          value={String(summary.openIncidents)}
+          sub={summary.openIncidents > 0 ? '需要关注' : '当前稳定'}
+          icon={Bell}
+          highlight={summary.openIncidents === 0 ? 'good' : 'bad'}
+        />
       </div>
 
-      {/* 分组状态网格 */}
+      <div className="grid gap-3 xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.65fr)]">
+        <BalanceTrendPanel groups={groupedUpstreams} trends={trends} totalBalance={summary.totalBalance} />
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
+          <AlertFeed incidents={incidents} />
+          <AnnouncementPanel />
+        </div>
+      </div>
+
       <div>
         <h2 className="mb-3 text-sm font-semibold text-muted-foreground">分组状态</h2>
         {data.items.length === 0 ? (
-          <Card><CardContent className="p-12 text-center text-muted-foreground">
-            暂无监控数据，去
-            <Link href="/upstreams" className="ml-1 text-primary hover:underline">添加上游</Link>
-          </CardContent></Card>
+          <Card>
+            <CardContent className="p-12 text-center text-muted-foreground">
+              暂无监控数据，去
+              <Link href="/upstreams" className="ml-1 text-primary hover:underline">添加上游</Link>
+            </CardContent>
+          </Card>
         ) : (
           <div className="space-y-4">
             {groupedUpstreams.map((group) => (
@@ -213,20 +293,27 @@ function DashboardSkeleton() {
           </Card>
         ))}
       </div>
+      <div className="grid gap-3 xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.65fr)]">
+        <Skeleton className="h-72 w-full rounded-2xl" />
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
+          <Skeleton className="h-32 w-full rounded-2xl" />
+          <Skeleton className="h-32 w-full rounded-2xl" />
+        </div>
+      </div>
       <div className="flex flex-col gap-3">
         <Skeleton className="h-4 w-20" />
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {Array.from({ length: 4 }, (_, index) => (
-            <Skeleton key={index} className="h-48 w-full" />
-          ))}
-        </div>
+        <Skeleton className="h-64 w-full rounded-2xl" />
       </div>
     </>
   );
 }
 
 function StatCard({ label, value, sub, icon: Icon, highlight }: {
-  label: string; value: string; sub: string; icon: React.ComponentType<{ className?: string }>; highlight?: 'good' | 'warn' | 'bad';
+  label: string;
+  value: string;
+  sub: string;
+  icon: ComponentType<{ className?: string }>;
+  highlight?: 'good' | 'warn' | 'bad';
 }) {
   const color = highlight === 'good' ? 'text-success' : highlight === 'warn' ? 'text-warning' : highlight === 'bad' ? 'text-destructive' : 'text-foreground';
   return (
@@ -236,37 +323,183 @@ function StatCard({ label, value, sub, icon: Icon, highlight }: {
           <span className="text-xs font-medium text-muted-foreground">{label}</span>
           <Icon className="h-4 w-4 opacity-60" />
         </div>
-        <div className={cn('mt-2 text-2xl font-bold', color)}>{value}</div>
+        <div className={cn('mt-2 text-2xl font-bold tracking-normal', color)}>{value}</div>
         <div className="mt-1 text-xs text-muted-foreground">{sub}</div>
       </CardContent>
     </Card>
   );
 }
 
+function BalanceTrendPanel({ groups, trends, totalBalance }: {
+  groups: DashboardGroup[];
+  trends: Record<number, TrendPoint[]>;
+  totalBalance: number;
+}) {
+  const chartData = useMemo(() => buildBalanceTrend(groups, trends), [groups, trends]);
+  const availablePoints = chartData.filter((point) => point.balance != null);
+  const first = availablePoints[0]?.balance ?? null;
+  const last = availablePoints.at(-1)?.balance ?? null;
+  const delta = first != null && last != null ? last - first : null;
+  const minBalance = availablePoints.length ? Math.min(...availablePoints.map((point) => point.balance ?? 0)) : null;
+  const maxBalance = availablePoints.length ? Math.max(...availablePoints.map((point) => point.balance ?? 0)) : null;
+
+  return (
+    <section className="overflow-hidden rounded-2xl bg-[radial-gradient(circle_at_top_left,hsl(var(--primary)/0.14),transparent_34%),linear-gradient(135deg,hsl(var(--card)),hsl(var(--muted)/0.36))] p-5 shadow-sm ring-1 ring-border/40">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-2 text-sm font-semibold text-muted-foreground">
+            <Activity className="size-4" />
+            余额变化
+          </div>
+          <div className="mt-2 text-4xl font-black tracking-normal text-emerald-500 drop-shadow-[0_0_18px_rgba(16,185,129,0.28)]">
+            {formatCurrency(totalBalance)}
+          </div>
+        </div>
+        <div className="grid min-w-44 grid-cols-3 gap-2 text-right text-xs">
+          <TrendMiniStat label="变化" value={delta == null ? '—' : `${delta >= 0 ? '+' : ''}${formatCurrency(delta)}`} tone={delta == null || delta === 0 ? 'neutral' : delta > 0 ? 'good' : 'bad'} />
+          <TrendMiniStat label="最低" value={minBalance == null ? '—' : formatCurrency(minBalance)} />
+          <TrendMiniStat label="最高" value={maxBalance == null ? '—' : formatCurrency(maxBalance)} />
+        </div>
+      </div>
+
+      <div className="mt-5 h-44">
+        {availablePoints.length === 0 ? (
+          <div className="flex h-full items-center justify-center rounded-xl bg-background/40 text-sm text-muted-foreground">
+            暂无余额历史
+          </div>
+        ) : (
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={chartData} margin={{ top: 12, right: 4, bottom: 0, left: 4 }}>
+              <defs>
+                <linearGradient id="dashboardBalanceGradient" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="rgb(16 185 129)" stopOpacity={0.35} />
+                  <stop offset="100%" stopColor="rgb(16 185 129)" stopOpacity={0.02} />
+                </linearGradient>
+              </defs>
+              <YAxis domain={['auto', 'auto']} hide />
+              <Tooltip
+                cursor={{ stroke: 'hsl(var(--border))', strokeDasharray: '3 3' }}
+                contentStyle={{
+                  fontSize: '12px',
+                  borderRadius: '10px',
+                  border: '1px solid hsl(var(--border))',
+                  background: 'hsl(var(--popover))',
+                }}
+                formatter={(value) => (typeof value === 'number' ? formatCurrency(value) : '—')}
+                labelFormatter={() => '余额'}
+              />
+              <Area
+                type="monotone"
+                dataKey="balance"
+                stroke="rgb(16 185 129)"
+                strokeWidth={2.5}
+                fill="url(#dashboardBalanceGradient)"
+                dot={false}
+                connectNulls
+              />
+            </AreaChart>
+          </ResponsiveContainer>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function TrendMiniStat({ label, value, tone = 'neutral' }: { label: string; value: string; tone?: 'neutral' | 'good' | 'bad' }) {
+  return (
+    <div className="rounded-xl bg-background/45 px-2.5 py-2">
+      <div className="text-[11px] text-muted-foreground">{label}</div>
+      <div className={cn(
+        'mt-0.5 font-mono text-sm font-bold',
+        tone === 'good' && 'text-emerald-500',
+        tone === 'bad' && 'text-rose-500',
+      )}>
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function AlertFeed({ incidents }: { incidents: DashboardIncident[] }) {
+  return (
+    <section className="rounded-2xl bg-card/75 p-4 shadow-sm ring-1 ring-border/40">
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 text-sm font-semibold">
+          <Bell className="size-4 text-amber-500" />
+          告警动态
+        </div>
+        <Badge variant={incidents.length ? 'destructive' : 'secondary'} className="rounded-md">
+          {incidents.length ? `${incidents.length} 条` : '正常'}
+        </Badge>
+      </div>
+      {incidents.length === 0 ? (
+        <div className="rounded-xl bg-emerald-500/8 px-3 py-5 text-sm text-emerald-600 dark:text-emerald-400">
+          当前无未处理告警
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {incidents.map((incident) => (
+            <div key={incident.id} className="rounded-xl bg-background/55 px-3 py-2.5">
+              <div className="flex items-center justify-between gap-2">
+                <span className={cn('text-xs font-bold', getSeverityClass(incident.severity))}>{getSeverityLabel(incident.severity)}</span>
+                <span className="shrink-0 text-[11px] text-muted-foreground">{timeAgo(incident.createdAt)}</span>
+              </div>
+              <div className="mt-1 line-clamp-2 text-sm">{incident.message}</div>
+              <div className="mt-1 truncate text-[11px] text-muted-foreground">
+                {incident.upstream?.name || '未知上游'}{incident.upstreamKey?.group ? ` · ${incident.upstreamKey.group}` : ''}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function AnnouncementPanel() {
+  return (
+    <section className="rounded-2xl bg-card/75 p-4 shadow-sm ring-1 ring-border/40">
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 text-sm font-semibold">
+          <Megaphone className="size-4 text-cyan-500" />
+          上游公告
+        </div>
+        <Badge variant="outline" className="rounded-md border-cyan-500/30 bg-cyan-500/10 text-cyan-600 dark:text-cyan-300">
+          预留
+        </Badge>
+      </div>
+      <div className="rounded-xl bg-background/55 px-3 py-5 text-sm text-muted-foreground">
+        暂无公告
+      </div>
+    </section>
+  );
+}
+
 function UpstreamGroupSection({ group, trends }: { group: DashboardGroup; trends: Record<number, TrendPoint[]> }) {
   return (
     <section className="rounded-2xl bg-gradient-to-br from-card via-card to-muted/30 p-5 shadow-sm ring-1 ring-border/40">
-      <div className="mb-5 flex flex-wrap items-start justify-between gap-5">
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="truncate text-lg font-semibold">{group.upstreamName}</span>
-            <Badge variant="secondary" className="border-0 bg-muted px-2 text-[11px]">{group.type === 'SUB2API' ? 'Sub2API' : 'New API'}</Badge>
-            {group.openIncidents > 0 ? <Badge variant="destructive" className="rounded-md text-[11px]">{group.openIncidents} 告警</Badge> : null}
+      <div className="mb-5 space-y-4">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="truncate text-lg font-semibold">{group.upstreamName}</span>
+              <Badge variant="secondary" className="border-0 bg-muted px-2 text-[11px]">{group.type === 'SUB2API' ? 'Sub2API' : 'New API'}</Badge>
+              {group.openIncidents > 0 ? <Badge variant="destructive" className="rounded-md text-[11px]">{group.openIncidents} 告警</Badge> : null}
+            </div>
+            <div className="mt-1 truncate text-xs text-muted-foreground" title={group.baseUrl}>{group.baseUrl}</div>
           </div>
-          <div className="mt-1 truncate text-xs text-muted-foreground" title={group.baseUrl}>{group.baseUrl}</div>
-          <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2">
-            <div>
-              <div className="text-[11px] text-muted-foreground">余额</div>
-              <div className={cn(
-                'text-3xl font-black tracking-normal text-emerald-500 drop-shadow-[0_0_14px_rgba(16,185,129,0.35)]',
-                group.totalBalance <= 0 && 'text-destructive drop-shadow-[0_0_14px_rgba(239,68,68,0.35)]',
-              )}>
-                ${group.totalBalance.toFixed(2)}
-              </div>
+          <div className="shrink-0 text-right">
+            <div className="text-[11px] text-muted-foreground">余额</div>
+            <div className={cn(
+              'text-3xl font-black tracking-normal text-emerald-500 drop-shadow-[0_0_14px_rgba(16,185,129,0.35)]',
+              group.totalBalance <= 0 && 'text-destructive drop-shadow-[0_0_14px_rgba(239,68,68,0.35)]',
+            )}>
+              {formatCurrency(group.totalBalance)}
             </div>
           </div>
         </div>
-        <div className="min-w-[280px] flex-1 sm:max-w-[520px]">
+
+        <div>
           <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground sm:grid-cols-4">
             <MetricPill label="可用" value={`${group.usableCount}/${group.items.length}`} strong={group.availabilityPct >= 80} />
             <MetricPill label="倍率" value={`${group.knownMultiplierCount}/${group.items.length}`} strong={group.knownMultiplierCount === group.items.length} />
@@ -389,20 +622,21 @@ function StatusChip({ status, incidents }: { status: string; incidents: number }
 
 function MultiplierBadge({ item }: { item: DashboardItem }) {
   const multiplier = getDisplayMultiplier(item);
-  const className = multiplier.source === '官方同步'
-    ? 'border-transparent bg-success/10 text-success shadow-[0_0_18px_rgba(34,197,94,0.20)]'
-    : multiplier.source === '名称解析'
-      ? 'border-transparent bg-cyan-500/10 text-cyan-600 shadow-[0_0_18px_rgba(6,182,212,0.22)] dark:text-cyan-300'
-      : 'border-transparent bg-muted text-muted-foreground';
+  const isKnown = multiplier !== '未获取';
 
   return (
     <div className="inline-flex min-w-0 flex-col items-start">
       <Badge
         variant="outline"
-        className={cn('max-w-full rounded-md px-2 py-1 font-mono text-[12px] font-black', className)}
-        title={multiplier.value}
+        className={cn(
+          'max-w-full rounded-md border-transparent px-2 py-1 font-mono text-[12px] font-black',
+          isKnown
+            ? 'bg-cyan-500/10 text-cyan-600 shadow-[0_0_18px_rgba(6,182,212,0.22)] dark:text-cyan-300'
+            : 'bg-muted text-muted-foreground',
+        )}
+        title={multiplier}
       >
-        <span className="truncate">{multiplier.value}</span>
+        <span className="truncate">{multiplier}</span>
       </Badge>
     </div>
   );
@@ -465,6 +699,7 @@ function groupDashboardItems(items: DashboardItem[]): DashboardGroup[] {
     if (existing) {
       existing.items.push(item);
       if (existing.totalBalance <= 0 && item.upstreamBalance != null) existing.totalBalance = item.upstreamBalance;
+      if (existing.balanceKeyId == null && item.upstreamBalanceKeyId != null) existing.balanceKeyId = item.upstreamBalanceKeyId;
       existing.openIncidents += item.openIncidents;
       if (hasDisplayMultiplier(item)) existing.knownMultiplierCount += 1;
       if (isOnlineStatus(item.status)) existing.onlineCount += 1;
@@ -482,6 +717,7 @@ function groupDashboardItems(items: DashboardItem[]): DashboardGroup[] {
       type: item.type,
       items: [item],
       totalBalance: item.upstreamBalance ?? item.balance ?? 0,
+      balanceKeyId: item.upstreamBalanceKeyId ?? item.keyId,
       avgLatencyMs: null,
       openIncidents: item.openIncidents,
       knownMultiplierCount: hasDisplayMultiplier(item) ? 1 : 0,
@@ -510,10 +746,8 @@ function groupDashboardItems(items: DashboardItem[]): DashboardGroup[] {
   });
 }
 
-function getDisplayMultiplier(item: DashboardItem): { value: string; source: string } {
-  if (item.groupRateMultiplier != null) {
-    return { value: formatGroupMultiplier(item.groupRateMultiplier), source: '官方同步' };
-  }
+function getDisplayMultiplier(item: DashboardItem): string {
+  if (item.groupRateMultiplier != null) return formatGroupMultiplier(item.groupRateMultiplier);
 
   const parsed = parseMultiplierFromText([
     item.groupName,
@@ -523,12 +757,11 @@ function getDisplayMultiplier(item: DashboardItem): { value: string; source: str
     item.groupDescription,
   ]);
 
-  if (parsed) return { value: parsed, source: '名称解析' };
-  return { value: '未获取', source: '接口未返回' };
+  return parsed || '未获取';
 }
 
 function hasDisplayMultiplier(item: DashboardItem): boolean {
-  return getDisplayMultiplier(item).value !== '未获取';
+  return getDisplayMultiplier(item) !== '未获取';
 }
 
 function parseMultiplierFromText(values: Array<string | null | undefined>): string | null {
@@ -554,13 +787,57 @@ function isUsableStatus(status: string): boolean {
   return normalized === 'ONLINE' || normalized === 'DEGRADED';
 }
 
+function buildBalanceTrend(groups: DashboardGroup[], trends: Record<number, TrendPoint[]>): BalanceChartPoint[] {
+  const maxPoints = 60;
+  const series = groups.map((group) => {
+    const balanceKeyId = group.balanceKeyId ?? group.items[0]?.keyId;
+    return balanceKeyId ? (trends[balanceKeyId] || []).filter((point) => point.balance != null).slice(-maxPoints) : [];
+  }).filter((points) => points.length > 0);
+
+  if (series.length === 0) return [];
+
+  const length = Math.max(...series.map((points) => points.length));
+  return Array.from({ length }, (_, index) => {
+    const offset = length - index;
+    let total = 0;
+    let count = 0;
+    for (const points of series) {
+      const point = points[points.length - offset];
+      if (point?.balance != null) {
+        total += point.balance;
+        count += 1;
+      }
+    }
+    return {
+      index,
+      balance: count > 0 ? Math.round(total * 100) / 100 : null,
+    };
+  });
+}
+
+function formatCurrency(value: number): string {
+  return `$${value.toFixed(2)}`;
+}
+
 function timeAgo(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
-  const sec = Math.floor(diff / 1000);
+  const sec = Math.max(0, Math.floor(diff / 1000));
   if (sec < 60) return `${sec}秒前`;
   const min = Math.floor(sec / 60);
   if (min < 60) return `${min}分钟前`;
   const hr = Math.floor(min / 60);
   if (hr < 24) return `${hr}小时前`;
   return `${Math.floor(hr / 24)}天前`;
+}
+
+function getSeverityLabel(severity: string): string {
+  if (severity === 'CRITICAL') return '严重';
+  if (severity === 'WARNING') return '警告';
+  return '提示';
+}
+
+function getSeverityClass(severity: string): string {
+  if (severity === 'CRITICAL') return 'text-rose-500';
+  if (severity === 'WARNING') return 'text-amber-500';
+  return 'text-cyan-500';
 }

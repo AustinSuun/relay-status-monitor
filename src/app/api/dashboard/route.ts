@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
+import { getUpstreamDisplayBalance, getUpstreamDisplayBalanceKey, isWalletBalanceKey } from '@/lib/key-display';
 
 /**
  * Dashboard 概览数据
@@ -25,7 +26,7 @@ export async function GET() {
   const offline = upstreams.filter((u) => u.status === 'OFFLINE').length;
 
   const visibleKeyGroups = upstreams.flatMap((u) => u.keys.filter((k) => !isWalletBalanceKey(k)));
-  const totalBalance = upstreams.reduce((sum, upstream) => sum + (getUpstreamBalance(upstream.keys) ?? 0), 0);
+  const totalBalance = upstreams.reduce((sum, upstream) => sum + (getUpstreamDisplayBalance(upstream.keys) ?? 0), 0);
 
   // 最近 24 小时采集成功率
   const oneDayAgo = new Date(Date.now() - 86400000);
@@ -43,7 +44,7 @@ export async function GET() {
   // 按真实分组粒度展开列表；钱包余额只作为站点余额来源，不单独展示为分组。
   const list = [];
   for (const u of upstreams) {
-    const upstreamBalance = getUpstreamBalance(u.keys);
+    const upstreamBalance = getUpstreamDisplayBalance(u.keys);
     for (const k of u.keys.filter((key) => !isWalletBalanceKey(key))) {
       list.push({
         keyId: k.id,
@@ -59,6 +60,7 @@ export async function GET() {
         groupRateMultiplier: k.groupRateMultiplier,
         remoteKeyId: k.remoteKeyId,
         upstreamBalance,
+        upstreamBalanceKeyId: getUpstreamDisplayBalanceKey(u.keys)?.id ?? null,
         status: k.status,
         balance: k.lastBalance,
         latencyMs: k.lastLatencyMs,
@@ -85,15 +87,4 @@ export async function GET() {
     },
     items: list,
   });
-}
-
-function isWalletBalanceKey(key: { group?: string | null; label?: string | null; keyName?: string | null; groupName?: string | null }) {
-  return [key.group, key.label, key.keyName, key.groupName]
-    .some((value) => value?.trim() === '钱包余额');
-}
-
-function getUpstreamBalance(keys: Array<{ lastBalance: number | null; group?: string | null; label?: string | null; keyName?: string | null; groupName?: string | null }>) {
-  const walletBalance = keys.find((key) => isWalletBalanceKey(key) && key.lastBalance !== null)?.lastBalance;
-  if (walletBalance !== undefined) return walletBalance;
-  return keys.find((key) => key.lastBalance !== null)?.lastBalance ?? null;
 }
