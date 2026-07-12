@@ -2,29 +2,10 @@
 
 import Link from 'next/link';
 import type { Column, ColumnDef } from '@tanstack/react-table';
-import {
-  ArrowDown,
-  ArrowUp,
-  ArrowUpDown,
-  Eye,
-  MoreHorizontal,
-  Pencil,
-  Power,
-  Trash2,
-  Zap,
-} from 'lucide-react';
+import { ArrowDown, ArrowUp, ArrowUpDown, Eye, Pencil, Power, Trash2, Zap } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuGroup,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import { StatusBadge, StatusDot } from '@/components/StatusBadge';
 import {
   formatGroupMultiplier,
@@ -124,58 +105,44 @@ function RowActions({
   callbacks: UpstreamColumnCallbacks;
 }) {
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label={`打开 ${upstream.name} 的操作菜单`}
-          title={`打开 ${upstream.name} 的操作菜单`}
-        >
-          <MoreHorizontal />
+    <div className="flex items-center justify-end gap-1">
+      {callbacks.onView ? (
+        <Button size="icon-sm" variant="ghost" title="查看详情" aria-label={`查看 ${upstream.name} 详情`} onClick={() => callbacks.onView?.(upstream)}>
+          <Eye />
         </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-40">
-        <DropdownMenuGroup>
-          <DropdownMenuLabel>操作</DropdownMenuLabel>
-          {callbacks.onView ? (
-            <DropdownMenuItem onSelect={() => callbacks.onView?.(upstream)}>
-              <Eye />
-              查看详情
-            </DropdownMenuItem>
-          ) : (
-            <DropdownMenuItem asChild>
-              <Link href={`/upstreams/${upstream.id}`}>
-                <Eye />
-                查看详情
-              </Link>
-            </DropdownMenuItem>
-          )}
-          <DropdownMenuItem onSelect={() => callbacks.onTest(upstream)}>
-            <Zap />
-            测试
-          </DropdownMenuItem>
-          <DropdownMenuItem onSelect={() => callbacks.onEdit(upstream)}>
-            <Pencil />
-            编辑
-          </DropdownMenuItem>
-          <DropdownMenuItem onSelect={() => callbacks.onToggle(upstream)}>
-            <Power />
-            {upstream.enabled ? '关闭监控' : '开启监控'}
-          </DropdownMenuItem>
-        </DropdownMenuGroup>
-        <DropdownMenuSeparator />
-        <DropdownMenuGroup>
-          <DropdownMenuItem
-            className="text-destructive focus:text-destructive"
-            onSelect={() => callbacks.onDelete(upstream)}
-          >
-            <Trash2 />
-            删除
-          </DropdownMenuItem>
-        </DropdownMenuGroup>
-      </DropdownMenuContent>
-    </DropdownMenu>
+      ) : (
+        <Button size="icon-sm" variant="ghost" title="查看详情" aria-label={`查看 ${upstream.name} 详情`} asChild>
+          <Link href={`/upstreams/${upstream.id}`}>
+            <Eye />
+          </Link>
+        </Button>
+      )}
+      <Button size="icon-sm" variant="ghost" title="测试" aria-label={`测试 ${upstream.name}`} onClick={() => callbacks.onTest(upstream)}>
+        <Zap />
+      </Button>
+      <Button size="icon-sm" variant="ghost" title="编辑" aria-label={`编辑 ${upstream.name}`} onClick={() => callbacks.onEdit(upstream)}>
+        <Pencil />
+      </Button>
+      <Button
+        size="icon-sm"
+        variant="ghost"
+        title={upstream.enabled ? '关闭监控' : '开启监控'}
+        aria-label={`${upstream.enabled ? '关闭' : '开启'} ${upstream.name} 监控`}
+        onClick={() => callbacks.onToggle(upstream)}
+      >
+        <Power />
+      </Button>
+      <Button
+        size="icon-sm"
+        variant="ghost"
+        className="text-destructive hover:text-destructive"
+        title="删除"
+        aria-label={`删除 ${upstream.name}`}
+        onClick={() => callbacks.onDelete(upstream)}
+      >
+        <Trash2 />
+      </Button>
+    </div>
   );
 }
 
@@ -188,15 +155,26 @@ export function createUpstreamColumns(
       enableHiding: false,
       header: ({ column }) => <SortableHeader column={column} label="厂商" />,
       cell: ({ row }) => (
-        <div className="min-w-0 space-y-1">
+        <div className="min-w-0 space-y-1.5">
           <div className="flex min-w-0 items-center gap-2">
-            <Link href={`/upstreams/${row.original.id}`} className="truncate text-base font-semibold hover:underline">
+            <Link
+              href={`/upstreams/${row.original.id}`}
+              className={cn(
+                'truncate text-lg font-black tracking-normal hover:underline',
+                'text-foreground drop-shadow-[0_0_10px_hsl(var(--primary)/0.18)]',
+              )}
+            >
               {row.original.name}
             </Link>
-            <Badge variant="outline" className="rounded-md px-2 text-[11px]">{row.original.type}</Badge>
+            <Badge
+              variant="outline"
+              className="rounded-md border-border/45 bg-muted/35 px-1.5 py-0 text-[10px] font-semibold text-muted-foreground"
+            >
+              {row.original.type === 'SUB2API' ? 'Sub2API' : 'New API'}
+            </Badge>
             {!row.original.enabled ? <Badge variant="secondary" className="rounded-md text-[11px]">监控关闭</Badge> : null}
           </div>
-          <div className="max-w-72 truncate text-sm text-muted-foreground" title={row.original.baseUrl}>
+          <div className="max-w-64 truncate text-sm text-muted-foreground" title={row.original.baseUrl}>
             {row.original.baseUrl}
           </div>
         </div>
@@ -232,22 +210,23 @@ export function createUpstreamColumns(
       header: '分组概览',
       cell: ({ row }) => {
         const enabledKeys = (row.original.keys || []).filter((key) => key.enabled && !isWalletBalanceKey(key));
+        const visibleKeys = enabledKeys.slice(0, 3);
 
         return enabledKeys.length === 0 ? (
-          <div className="text-sm text-muted-foreground">暂无可展示分组</div>
+          <div className="w-[360px] truncate text-sm text-muted-foreground">暂无可展示分组</div>
         ) : (
-          <div className="flex max-w-[520px] flex-wrap gap-1.5">
-            {enabledKeys.map((key) => (
+          <div className="flex w-[360px] min-w-0 items-center gap-1.5 overflow-hidden">
+            {visibleKeys.map((key) => (
               <div
                 key={key.id}
                 className={cn(
-                  'inline-flex max-w-full items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs',
+                  'inline-flex min-w-0 shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs',
                   'bg-muted/60',
                 )}
                 title={row.original.type === 'NEW_API' ? getKeyDisplayName(key) : key.group}
               >
                 <StatusDot status={key.status} />
-                <span className="max-w-32 truncate font-medium">
+                <span className="max-w-28 truncate font-medium">
                   {row.original.type === 'NEW_API' ? getKeyDisplayName(key) : key.group}
                 </span>
                 {key.groupRateMultiplier != null ? (
@@ -257,6 +236,11 @@ export function createUpstreamColumns(
                 ) : null}
               </div>
             ))}
+            {enabledKeys.length > 3 ? (
+              <span className="shrink-0 rounded-lg bg-muted/50 px-2 py-1 text-xs text-muted-foreground">
+                +{enabledKeys.length - 3}
+              </span>
+            ) : null}
           </div>
         );
       },

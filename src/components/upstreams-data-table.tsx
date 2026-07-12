@@ -300,16 +300,17 @@ export function UpstreamsDataTable({
         </DropdownMenu>
       </div>
 
-      <div className="overflow-hidden rounded-md border">
-        <Table className="min-w-[980px]">
-          <TableHeader>
+      <div className="overflow-hidden rounded-2xl bg-card/65 p-2 shadow-sm ring-1 ring-border/40">
+        <Table className="min-w-[980px] border-separate border-spacing-y-2">
+          <TableHeader className="[&_tr]:border-0">
             {table.getHeaderGroups().map((headerGroup) => (
-              <TableRow key={headerGroup.id}>
+              <TableRow key={headerGroup.id} className="border-0 bg-transparent hover:bg-transparent">
                 {headerGroup.headers.map((header) => (
                   <TableHead
                     key={header.id}
                     className={cn(
-                      header.column.id === 'actions' && 'sticky right-0 z-20 border-l bg-background',
+                      'h-8 px-4 text-xs font-semibold',
+                      header.column.id === 'actions' && 'sticky right-0 z-20 bg-card/80',
                     )}
                   >
                     {header.isPlaceholder
@@ -329,13 +330,14 @@ export function UpstreamsDataTable({
               </TableRow>
             ) : table.getRowModel().rows.length > 0 ? (
               table.getRowModel().rows.map((row) => (
-                <TableRow key={row.id} className="group">
+                <TableRow key={row.id} className="group border-0 bg-background/62 shadow-sm transition hover:bg-background hover:shadow-md">
                   {row.getVisibleCells().map((cell) => (
                     <TableCell
                       key={cell.id}
                       className={cn(
+                        'px-4 py-4 first:rounded-l-xl last:rounded-r-xl',
                         cell.column.id === 'actions'
-                          && 'sticky right-0 z-10 border-l bg-background group-hover:bg-muted/50',
+                          && 'sticky right-0 z-10 bg-background/95 group-hover:bg-background',
                       )}
                     >
                       {flexRender(cell.column.columnDef.cell, cell.getContext())}
