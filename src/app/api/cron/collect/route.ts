@@ -1,3 +1,5 @@
+export const dynamic = "force-dynamic";
+
 import { NextResponse } from 'next/server';
 import { runCollectCycle } from '@/lib/collector';
 import { getCronSecret } from '@/lib/settings';

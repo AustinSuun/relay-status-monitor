@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import Link from 'next/link';
 import { Server, Wallet, TrendingUp, Bell, RefreshCw, LayoutDashboard, AlertCircle } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
@@ -44,6 +44,18 @@ interface DashboardData {
     totalKeys: number; totalBalance: number; availability: number; openIncidents: number;
   };
   items: DashboardItem[];
+}
+
+interface DashboardGroup {
+  upstreamId: number;
+  upstreamName: string;
+  baseUrl: string;
+  type: string;
+  items: DashboardItem[];
+  totalBalance: number;
+  avgLatencyMs: number | null;
+  openIncidents: number;
+  knownMultiplierCount: number;
 }
 
 export default function DashboardPage() {
@@ -106,6 +118,7 @@ export default function DashboardPage() {
       )}
     />
   );
+  const groupedUpstreams = useMemo(() => groupDashboardItems(data?.items ?? []), [data?.items]);
 
   if (loading && !data) {
     return (
@@ -159,9 +172,9 @@ export default function DashboardPage() {
             <Link href="/upstreams" className="ml-1 text-primary hover:underline">添加上游</Link>
           </CardContent></Card>
         ) : (
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {data.items.map((item) => (
-              <GroupCard key={item.keyId} item={item} trend={trends[item.keyId] || []} />
+          <div className="space-y-4">
+            {groupedUpstreams.map((group) => (
+              <UpstreamGroupSection key={group.upstreamId} group={group} trends={trends} />
             ))}
           </div>
         )}
@@ -214,36 +227,73 @@ function StatCard({ label, value, sub, icon: Icon, highlight }: {
   );
 }
 
+function UpstreamGroupSection({ group, trends }: { group: DashboardGroup; trends: Record<number, Record<string, number | null>[]> }) {
+  return (
+    <section className="rounded-xl border bg-card/60 p-3 shadow-sm">
+      <div className="mb-3 flex flex-wrap items-start justify-between gap-3 px-1">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="truncate text-base font-semibold">{group.upstreamName}</span>
+            <Badge variant="secondary" className="rounded-md text-[11px]">{group.type === 'SUB2API' ? 'Sub2API' : 'New API'}</Badge>
+            {group.openIncidents > 0 ? <Badge variant="destructive" className="rounded-md text-[11px]">{group.openIncidents} 告警</Badge> : null}
+          </div>
+          <div className="mt-1 truncate text-xs text-muted-foreground" title={group.baseUrl}>{group.baseUrl}</div>
+        </div>
+        <div className="grid grid-cols-4 gap-3 text-right text-xs text-muted-foreground">
+          <div>
+            <div>分组</div>
+            <div className="mt-0.5 text-sm font-semibold text-foreground">{group.items.length}</div>
+          </div>
+          <div>
+            <div>余额</div>
+            <div className="mt-0.5 text-sm font-semibold text-foreground">${group.totalBalance.toFixed(2)}</div>
+          </div>
+          <div>
+            <div>均延迟</div>
+            <div className="mt-0.5 text-sm font-semibold text-foreground">{group.avgLatencyMs != null ? `${group.avgLatencyMs}ms` : '—'}</div>
+          </div>
+          <div>
+            <div>倍率</div>
+            <div className="mt-0.5 text-sm font-semibold text-foreground">{group.knownMultiplierCount}/{group.items.length}</div>
+          </div>
+        </div>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        {group.items.map((item) => (
+          <GroupCard key={item.keyId} item={item} trend={trends[item.keyId] || []} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function GroupCard({ item, trend }: { item: DashboardItem; trend: Record<string, number | null>[] }) {
+  const displayName = getKeyDisplayName(item);
+  const groupName = getKeyGroupLabel(item);
+  const multiplier = getDisplayMultiplier(item);
+
   return (
     <Link href={`/upstreams/${item.upstreamId}`} className="block">
-      <Card className="transition-colors hover:border-foreground/20">
+      <Card className="h-full transition-colors hover:border-foreground/20">
         <CardContent className="p-4">
           <div className="flex items-start justify-between">
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
                 <StatusDot status={item.status} />
-                <span className="truncate font-semibold">{item.upstreamName}</span>
+                <span className="truncate font-semibold" title={displayName}>{displayName}</span>
               </div>
-              {item.type === 'NEW_API' ? (
-                <div className="mt-0.5 min-w-0 text-xs text-muted-foreground">
-                  <div className="truncate" title={getKeyDisplayName(item)}>{getKeyDisplayName(item)}</div>
-                  <div className="truncate" title={getKeyGroupLabel(item)}>
-                    分组：{getKeyGroupLabel(item)} · {formatGroupMultiplier(item.groupRateMultiplier)}
-                  </div>
-                  {item.groupDescription ? (
-                    <div className="truncate" title={item.groupDescription}>{item.groupDescription}</div>
-                  ) : null}
-                </div>
-              ) : (
-                <div className="mt-0.5 truncate text-xs text-muted-foreground">{item.group}</div>
-              )}
+              <div className="mt-0.5 min-w-0 text-xs text-muted-foreground">
+                <div className="truncate" title={groupName}>分组：{groupName}</div>
+                {item.groupDescription ? (
+                  <div className="truncate" title={item.groupDescription}>{item.groupDescription}</div>
+                ) : null}
+              </div>
             </div>
             {item.openIncidents > 0 && (
               <Badge variant="destructive" className="text-xs">{item.openIncidents}</Badge>
             )}
           </div>
-          <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
+          <div className="mt-3 grid grid-cols-3 gap-2 text-sm">
             <div>
               <div className="text-xs text-muted-foreground">余额</div>
               <div className="font-semibold">{item.balance != null ? `$${item.balance.toFixed(2)}` : '—'}</div>
@@ -251,6 +301,11 @@ function GroupCard({ item, trend }: { item: DashboardItem; trend: Record<string,
             <div>
               <div className="text-xs text-muted-foreground">延迟</div>
               <div className="font-semibold">{item.latencyMs != null ? `${item.latencyMs}ms` : '—'}</div>
+            </div>
+            <div>
+              <div className="text-xs text-muted-foreground">倍率</div>
+              <div className="font-semibold">{multiplier.value}</div>
+              <div className="mt-0.5 text-[10px] leading-none text-muted-foreground">{multiplier.source}</div>
             </div>
           </div>
           <div className="mt-3"><Sparkline data={trend} dataKey="balance" color="hsl(var(--primary))" height={28} /></div>
@@ -262,6 +317,76 @@ function GroupCard({ item, trend }: { item: DashboardItem; trend: Record<string,
       </Card>
     </Link>
   );
+}
+
+function groupDashboardItems(items: DashboardItem[]): DashboardGroup[] {
+  const map = new Map<number, DashboardGroup>();
+
+  for (const item of items) {
+    const existing = map.get(item.upstreamId);
+    if (existing) {
+      existing.items.push(item);
+      existing.totalBalance += item.balance || 0;
+      existing.openIncidents += item.openIncidents;
+      if (hasDisplayMultiplier(item)) existing.knownMultiplierCount += 1;
+      continue;
+    }
+
+    map.set(item.upstreamId, {
+      upstreamId: item.upstreamId,
+      upstreamName: item.upstreamName,
+      baseUrl: item.baseUrl,
+      type: item.type,
+      items: [item],
+      totalBalance: item.balance || 0,
+      avgLatencyMs: null,
+      openIncidents: item.openIncidents,
+      knownMultiplierCount: hasDisplayMultiplier(item) ? 1 : 0,
+    });
+  }
+
+  return Array.from(map.values()).map((group) => {
+    const latencyValues = group.items
+      .map((item) => item.latencyMs)
+      .filter((value): value is number => value != null);
+
+    return {
+      ...group,
+      totalBalance: Math.round(group.totalBalance * 100) / 100,
+      avgLatencyMs: latencyValues.length
+        ? Math.round(latencyValues.reduce((sum, value) => sum + value, 0) / latencyValues.length)
+        : null,
+    };
+  });
+}
+
+function getDisplayMultiplier(item: DashboardItem): { value: string; source: string } {
+  if (item.groupRateMultiplier != null) {
+    return { value: formatGroupMultiplier(item.groupRateMultiplier), source: '官方同步' };
+  }
+
+  const parsed = parseMultiplierFromText([
+    item.groupName,
+    item.group,
+    item.label,
+    item.keyName,
+    item.groupDescription,
+  ]);
+
+  if (parsed) return { value: parsed, source: '名称解析' };
+  return { value: '未获取', source: '接口未返回' };
+}
+
+function hasDisplayMultiplier(item: DashboardItem): boolean {
+  return getDisplayMultiplier(item).value !== '未获取';
+}
+
+function parseMultiplierFromText(values: Array<string | null | undefined>): string | null {
+  for (const value of values) {
+    const match = value?.match(/(?:^|[^0-9])(\d+(?:\.\d+)?)\s*[xX倍]/);
+    if (match) return `${Number(match[1])}x`;
+  }
+  return null;
 }
 
 function timeAgo(iso: string): string {

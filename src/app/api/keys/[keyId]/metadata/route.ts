@@ -1,3 +1,5 @@
+export const dynamic = "force-dynamic";
+
 import { NextResponse } from 'next/server';
 import { refreshKeyMetadata } from '@/lib/key-metadata-service';
 import { toSafeUpstreamKey } from '@/lib/key-metadata';

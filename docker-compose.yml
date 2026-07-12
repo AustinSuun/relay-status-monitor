@@ -1,0 +1,35 @@
+services:
+  relay-status-postgres:
+    image: postgres:16-alpine
+    container_name: relay-status-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: relay_status
+      POSTGRES_USER: relay_status
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - relay_status_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U relay_status -d relay_status"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  relay-status-monitor:
+    build: .
+    container_name: relay-status-monitor
+    restart: unless-stopped
+    depends_on:
+      relay-status-postgres:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://relay_status:${POSTGRES_PASSWORD}@relay-status-postgres:5432/relay_status?schema=public
+      PORT: 3000
+      HOSTNAME: 0.0.0.0
+    ports:
+      - "127.0.0.1:3200:3000"
+
+volumes:
+  relay_status_pgdata:
