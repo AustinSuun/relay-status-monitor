@@ -14,27 +14,26 @@
 
 ### 桌面端
 
-| 登录 | 总览 |
-| --- | --- |
-| ![桌面端登录页](docs/screenshots/desktop/login.png) | ![桌面端总览页](docs/screenshots/desktop/dashboard.png) |
+[![桌面端登录页](docs/screenshots/desktop/login.png)](docs/screenshots/desktop/login.png)
 
-| 上游管理 | 上游详情 |
-| --- | --- |
-| ![桌面端上游管理页](docs/screenshots/desktop/upstreams.png) | ![桌面端上游详情页](docs/screenshots/desktop/upstream-detail.png) |
+[![桌面端总览页](docs/screenshots/desktop/dashboard.png)](docs/screenshots/desktop/dashboard.png)
 
-| 告警事件 | 设置 |
-| --- | --- |
-| ![桌面端告警事件页](docs/screenshots/desktop/incidents.png) | ![桌面端设置页](docs/screenshots/desktop/settings.png) |
+[![桌面端上游管理页](docs/screenshots/desktop/upstreams.png)](docs/screenshots/desktop/upstreams.png)
+
+[![桌面端上游详情页](docs/screenshots/desktop/upstream-detail.png)](docs/screenshots/desktop/upstream-detail.png)
+
+[![桌面端告警事件页](docs/screenshots/desktop/incidents.png)](docs/screenshots/desktop/incidents.png)
+
+[![桌面端设置页](docs/screenshots/desktop/settings.png)](docs/screenshots/desktop/settings.png)
 
 ### 手机端
 
-| 登录 | 总览 | 上游管理 |
-| --- | --- | --- |
-| ![手机端登录页](docs/screenshots/mobile/login.png) | ![手机端总览页](docs/screenshots/mobile/dashboard.png) | ![手机端上游管理页](docs/screenshots/mobile/upstreams.png) |
-
-| 上游详情 | 告警事件 | 设置 |
-| --- | --- | --- |
-| ![手机端上游详情页](docs/screenshots/mobile/upstream-detail.png) | ![手机端告警事件页](docs/screenshots/mobile/incidents.png) | ![手机端设置页](docs/screenshots/mobile/settings.png) |
+<p align="center"><a href="docs/screenshots/mobile/login.png"><img src="docs/screenshots/mobile/login.png" alt="手机端登录页" width="390"></a></p>
+<p align="center"><a href="docs/screenshots/mobile/dashboard.png"><img src="docs/screenshots/mobile/dashboard.png" alt="手机端总览页" width="390"></a></p>
+<p align="center"><a href="docs/screenshots/mobile/upstreams.png"><img src="docs/screenshots/mobile/upstreams.png" alt="手机端上游管理页" width="390"></a></p>
+<p align="center"><a href="docs/screenshots/mobile/upstream-detail.png"><img src="docs/screenshots/mobile/upstream-detail.png" alt="手机端上游详情页" width="390"></a></p>
+<p align="center"><a href="docs/screenshots/mobile/incidents.png"><img src="docs/screenshots/mobile/incidents.png" alt="手机端告警事件页" width="390"></a></p>
+<p align="center"><a href="docs/screenshots/mobile/settings.png"><img src="docs/screenshots/mobile/settings.png" alt="手机端设置页" width="390"></a></p>
 
 ## 主要能力
 
