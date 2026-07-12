@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import type { Column, ColumnDef } from '@tanstack/react-table';
-import { ArrowDown, ArrowUp, ArrowUpDown, Eye, Pencil, Power, Trash2, Zap } from 'lucide-react';
+import { ArrowDown, ArrowUp, ArrowUpDown, Eye, Pencil, Trash2, Zap } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
@@ -122,15 +122,6 @@ function RowActions({
       </Button>
       <Button size="icon-sm" variant="ghost" title="编辑" aria-label={`编辑 ${upstream.name}`} onClick={() => callbacks.onEdit(upstream)}>
         <Pencil />
-      </Button>
-      <Button
-        size="icon-sm"
-        variant="ghost"
-        title={upstream.enabled ? '关闭监控' : '开启监控'}
-        aria-label={`${upstream.enabled ? '关闭' : '开启'} ${upstream.name} 监控`}
-        onClick={() => callbacks.onToggle(upstream)}
-      >
-        <Power />
       </Button>
       <Button
         size="icon-sm"

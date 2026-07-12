@@ -680,6 +680,7 @@ function GroupCard({ item, trend }: { item: DashboardItem; trend: TrendPoint[] }
           <div className="mt-5">
             <StatusTimeline trend={trend} currentStatus={item.status} />
           </div>
+          <GroupResultNotice item={item} />
           <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
             <span>近 60 次记录</span>
             {item.lastCollectedAt && <span>{timeAgo(item.lastCollectedAt)}</span>}
@@ -688,6 +689,34 @@ function GroupCard({ item, trend }: { item: DashboardItem; trend: TrendPoint[] }
       </Card>
     </Link>
   );
+}
+
+function GroupResultNotice({ item }: { item: DashboardItem }) {
+  if (item.lastError) {
+    return (
+      <div className="mt-3 line-clamp-2 rounded-lg bg-rose-500/8 px-3 py-2 text-xs text-rose-600 dark:text-rose-400" title={item.lastError}>
+        {item.lastError}
+      </div>
+    );
+  }
+
+  if (!item.hasApiKey && !item.hasAccessToken) {
+    return (
+      <div className="mt-3 rounded-lg bg-amber-500/10 px-3 py-2 text-xs text-amber-600 dark:text-amber-400">
+        未配置可用凭证
+      </div>
+    );
+  }
+
+  if (!item.lastCollectedAt) {
+    return (
+      <div className="mt-3 rounded-lg bg-muted/60 px-3 py-2 text-xs text-muted-foreground">
+        等待首次采集
+      </div>
+    );
+  }
+
+  return null;
 }
 
 function StatusChip({ status, incidents }: { status: string; incidents: number }) {
