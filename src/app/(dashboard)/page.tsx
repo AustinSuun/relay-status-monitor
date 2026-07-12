@@ -7,7 +7,6 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { StatusDot } from '@/components/StatusBadge';
-import { Sparkline } from '@/components/Sparkline';
 import { cn } from '@/lib/utils';
 import { formatGroupMultiplier, getKeyDisplayName, getKeyGroupLabel } from '@/lib/key-display';
 import { PageHeader } from '@/components/page-header';
@@ -64,9 +63,15 @@ interface DashboardGroup {
   availabilityPct: number;
 }
 
+type TrendPoint = {
+  balance: number | null;
+  latencyMs: number | null;
+  success: boolean | null;
+};
+
 export default function DashboardPage() {
   const [data, setData] = useState<DashboardData | null>(null);
-  const [trends, setTrends] = useState<Record<number, Record<string, number | null>[]>>({});
+  const [trends, setTrends] = useState<Record<number, TrendPoint[]>>({});
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -87,12 +92,16 @@ export default function DashboardPage() {
           try {
             const r = await fetch(`/api/metrics?upstreamKeyId=${item.keyId}&hours=6&limit=200`);
             const metrics = await r.json();
-            return [item.keyId, metrics.map((m: Record<string, unknown>) => ({ balance: m.balance, latencyMs: m.latencyMs }))] as const;
+            return [item.keyId, metrics.map((m: Record<string, unknown>) => ({
+              balance: typeof m.balance === 'number' ? m.balance : null,
+              latencyMs: typeof m.latencyMs === 'number' ? m.latencyMs : null,
+              success: typeof m.success === 'boolean' ? m.success : null,
+            }))] as const;
           } catch { return [item.keyId, []] as const; }
         })
       );
       if (!isCurrent()) return;
-      const map: Record<number, Record<string, number | null>[]> = {};
+      const map: Record<number, TrendPoint[]> = {};
       for (const [id, arr] of trendResults) map[id] = arr;
       setTrends(map);
     } catch (fetchError) {
@@ -220,7 +229,7 @@ function StatCard({ label, value, sub, icon: Icon, highlight }: {
 }) {
   const color = highlight === 'good' ? 'text-success' : highlight === 'warn' ? 'text-warning' : highlight === 'bad' ? 'text-destructive' : 'text-foreground';
   return (
-    <Card>
+    <Card className="border-transparent bg-card/70 shadow-sm">
       <CardContent className="p-4">
         <div className="flex items-center justify-between">
           <span className="text-xs font-medium text-muted-foreground">{label}</span>
@@ -233,27 +242,27 @@ function StatCard({ label, value, sub, icon: Icon, highlight }: {
   );
 }
 
-function UpstreamGroupSection({ group, trends }: { group: DashboardGroup; trends: Record<number, Record<string, number | null>[]> }) {
+function UpstreamGroupSection({ group, trends }: { group: DashboardGroup; trends: Record<number, TrendPoint[]> }) {
   return (
-    <section className="rounded-xl border bg-card/80 p-4 shadow-sm">
-      <div className="mb-4 flex flex-wrap items-start justify-between gap-4">
-        <div className="min-w-0">
+    <section className="rounded-2xl bg-gradient-to-br from-card via-card to-muted/30 p-5 shadow-sm ring-1 ring-border/40">
+      <div className="mb-5 flex flex-wrap items-start justify-between gap-5">
+        <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <span className="truncate text-lg font-semibold">{group.upstreamName}</span>
-            <Badge variant="secondary" className="rounded-md text-[11px]">{group.type === 'SUB2API' ? 'Sub2API' : 'New API'}</Badge>
+            <Badge variant="secondary" className="border-0 bg-muted px-2 text-[11px]">{group.type === 'SUB2API' ? 'Sub2API' : 'New API'}</Badge>
             {group.openIncidents > 0 ? <Badge variant="destructive" className="rounded-md text-[11px]">{group.openIncidents} 告警</Badge> : null}
-            <Badge
-              variant="outline"
-              className={cn(
-                'rounded-md border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 dark:text-emerald-300',
-                group.totalBalance <= 0 && 'border-destructive/20 bg-destructive/10 text-destructive',
-              )}
-            >
-              余额 ${group.totalBalance.toFixed(2)}
-            </Badge>
           </div>
           <div className="mt-1 truncate text-xs text-muted-foreground" title={group.baseUrl}>{group.baseUrl}</div>
-          <div className="mt-3 flex flex-wrap gap-1.5">
+          <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2">
+            <div>
+              <div className="text-[11px] text-muted-foreground">余额</div>
+              <div className={cn(
+                'text-3xl font-black tracking-normal text-emerald-500 drop-shadow-[0_0_14px_rgba(16,185,129,0.35)]',
+                group.totalBalance <= 0 && 'text-destructive drop-shadow-[0_0_14px_rgba(239,68,68,0.35)]',
+              )}>
+                ${group.totalBalance.toFixed(2)}
+              </div>
+            </div>
             {group.items.map((item) => (
               <MultiplierBadge key={item.keyId} item={item} compact />
             ))}
@@ -286,9 +295,9 @@ function UpstreamGroupSection({ group, trends }: { group: DashboardGroup; trends
 
 function MetricPill({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
   return (
-    <div className="rounded-lg border bg-background/60 px-2 py-1.5">
+    <div className="rounded-xl bg-background/55 px-3 py-2 shadow-inner shadow-black/[0.03]">
       <div>{label}</div>
-      <div className={cn('mt-0.5 text-sm font-semibold', strong ? 'text-success' : 'text-foreground')}>{value}</div>
+      <div className={cn('mt-0.5 text-base font-bold', strong ? 'text-success drop-shadow-[0_0_10px_rgba(34,197,94,0.35)]' : 'text-foreground')}>{value}</div>
     </div>
   );
 }
@@ -303,7 +312,7 @@ function AvailabilityBar({ group }: { group: DashboardGroup }) {
   ].filter((part) => part.value > 0);
 
   return (
-    <div className="mt-3 flex h-2 overflow-hidden rounded-full bg-muted">
+    <div className="mt-3 flex h-2.5 overflow-hidden rounded-full bg-background/70 shadow-inner">
       {parts.map((part) => (
         <div
           key={part.key}
@@ -315,14 +324,17 @@ function AvailabilityBar({ group }: { group: DashboardGroup }) {
   );
 }
 
-function GroupCard({ item, trend }: { item: DashboardItem; trend: Record<string, number | null>[] }) {
+function GroupCard({ item, trend }: { item: DashboardItem; trend: TrendPoint[] }) {
   const displayName = getKeyDisplayName(item);
   const groupName = getKeyGroupLabel(item);
 
   return (
     <Link href={`/upstreams/${item.upstreamId}`} className="block">
-      <Card className={cn('h-full transition-colors hover:border-foreground/20', item.openIncidents > 0 && 'border-destructive/40')}>
-        <CardContent className="p-4">
+      <Card className={cn(
+        'h-full border-transparent bg-background/70 shadow-sm transition hover:-translate-y-0.5 hover:bg-background hover:shadow-md',
+        item.openIncidents > 0 && 'ring-1 ring-destructive/30',
+      )}>
+        <CardContent className="p-5">
           <div className="flex items-start justify-between">
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
@@ -338,7 +350,7 @@ function GroupCard({ item, trend }: { item: DashboardItem; trend: Record<string,
             </div>
             <StatusChip status={item.status} incidents={item.openIncidents} />
           </div>
-          <div className="mt-3 grid grid-cols-2 gap-2 text-sm sm:grid-cols-3">
+          <div className="mt-4 grid grid-cols-2 gap-3 text-sm sm:grid-cols-3">
             <div>
               <div className="text-xs text-muted-foreground">延迟</div>
               <div className="font-semibold">{item.latencyMs != null ? `${item.latencyMs}ms` : '—'}</div>
@@ -352,9 +364,11 @@ function GroupCard({ item, trend }: { item: DashboardItem; trend: Record<string,
               <div className="font-semibold">{normalizeStatus(item.status) === 'ONLINE' ? '可用' : normalizeStatus(item.status) === 'DEGRADED' ? '降级' : normalizeStatus(item.status) === 'OFFLINE' ? '离线' : '未知'}</div>
             </div>
           </div>
-          <div className="mt-3"><Sparkline data={trend} dataKey="balance" color="hsl(var(--primary))" height={28} /></div>
-          <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
-            <span>{item.type === 'SUB2API' ? 'Sub2API' : 'New API'}</span>
+          <div className="mt-5">
+            <StatusTimeline trend={trend} currentStatus={item.status} />
+          </div>
+          <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
+            <span>近 60 次记录</span>
             {item.lastCollectedAt && <span>{timeAgo(item.lastCollectedAt)}</span>}
           </div>
         </CardContent>
@@ -386,17 +400,17 @@ function MultiplierBadge({ item, compact = false }: { item: DashboardItem; compa
   const multiplier = getDisplayMultiplier(item);
   const isMissing = multiplier.value === '未获取';
   const className = multiplier.source === '官方同步'
-    ? 'border-success/25 bg-success/10 text-success'
+    ? 'border-transparent bg-success/10 text-success shadow-[0_0_18px_rgba(34,197,94,0.20)]'
     : multiplier.source === '名称解析'
-      ? 'border-primary/25 bg-primary/10 text-primary'
-      : 'border-muted-foreground/20 bg-muted text-muted-foreground';
+      ? 'border-transparent bg-cyan-500/10 text-cyan-600 shadow-[0_0_18px_rgba(6,182,212,0.22)] dark:text-cyan-300'
+      : 'border-transparent bg-muted text-muted-foreground';
   const label = compact ? `${getKeyDisplayName(item)} ${multiplier.value}` : multiplier.value;
 
   return (
     <div className="inline-flex min-w-0 flex-col items-start">
       <Badge
         variant="outline"
-        className={cn('max-w-full rounded-md px-1.5 py-0.5 font-mono text-[11px]', className)}
+        className={cn('max-w-full rounded-md px-2 py-1 font-mono text-[12px] font-black', className)}
         title={`${getKeyDisplayName(item)} · ${multiplier.value} · ${multiplier.source}`}
       >
         <span className="truncate">{label}</span>
@@ -408,6 +422,55 @@ function MultiplierBadge({ item, compact = false }: { item: DashboardItem; compa
       )}
     </div>
   );
+}
+
+function StatusTimeline({ trend, currentStatus }: { trend: TrendPoint[]; currentStatus: string }) {
+  const normalized = normalizeStatus(currentStatus);
+  const recent = trend.slice(-60);
+  const missingCount = Math.max(0, 60 - recent.length);
+  const points: Array<TrendPoint | null> = [
+    ...Array.from({ length: missingCount }, () => null),
+    ...recent,
+  ];
+
+  if (points.length === 0) {
+    return <div className="h-8 rounded-lg bg-muted/50" />;
+  }
+
+  return (
+    <div>
+      <div className="flex h-8 items-end gap-[3px] overflow-hidden rounded-lg bg-muted/35 px-1.5 py-1.5">
+        {points.map((point, index) => {
+          const state = getTimelineState(point, normalized);
+          return (
+            <span
+              key={index}
+              className={cn(
+                'h-full min-w-[3px] flex-1 rounded-full',
+                state === 'good' && 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.55)]',
+                state === 'warn' && 'bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.45)]',
+                state === 'bad' && 'bg-rose-400 shadow-[0_0_8px_rgba(251,113,133,0.45)]',
+                state === 'empty' && 'bg-muted-foreground/20',
+              )}
+              title={point ? `延迟 ${point.latencyMs ?? '未知'}ms` : '暂无记录'}
+            />
+          );
+        })}
+      </div>
+      <div className="mt-1 flex justify-between text-[10px] font-medium uppercase tracking-normal text-muted-foreground">
+        <span>Past</span>
+        <span>Now</span>
+      </div>
+    </div>
+  );
+}
+
+function getTimelineState(point: TrendPoint | null, currentStatus: 'ONLINE' | 'DEGRADED' | 'OFFLINE' | 'UNKNOWN'): 'good' | 'warn' | 'bad' | 'empty' {
+  if (!point) return 'empty';
+  if (point.success === false || currentStatus === 'OFFLINE') return 'bad';
+  if (currentStatus === 'DEGRADED' || (point.latencyMs != null && point.latencyMs >= 1500)) return 'warn';
+  if (point.success === true) return 'good';
+  return 'empty';
 }
 
 function groupDashboardItems(items: DashboardItem[]): DashboardGroup[] {
