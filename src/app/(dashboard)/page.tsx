@@ -14,9 +14,12 @@ import {
   Activity,
 } from 'lucide-react';
 import {
-  AreaChart,
+  ComposedChart,
   Area,
+  Line,
+  XAxis,
   YAxis,
+  CartesianGrid,
   Tooltip,
   ResponsiveContainer,
 } from 'recharts';
@@ -104,11 +107,21 @@ type TrendPoint = {
   balance: number | null;
   latencyMs: number | null;
   success: boolean | null;
+  recordedAt: string | null;
 };
 
 type BalanceChartPoint = {
-  index: number;
+  label: string;
   balance: number | null;
+  spent: number;
+};
+
+type ProviderBalanceSummary = {
+  id: number;
+  name: string;
+  status: string;
+  balance: number;
+  spentToday: number;
 };
 
 export default function DashboardPage() {
@@ -146,12 +159,13 @@ export default function DashboardPage() {
       const trendResults = await Promise.all(
         trendKeyIds.map(async (keyId) => {
           try {
-            const r = await fetch(`/api/metrics?upstreamKeyId=${keyId}&hours=6&limit=200`);
+            const r = await fetch(`/api/metrics?upstreamKeyId=${keyId}&days=7&limit=1000`);
             const metrics = await r.json();
             const points: TrendPoint[] = Array.isArray(metrics) ? metrics.map((m: Record<string, unknown>) => ({
               balance: typeof m.balance === 'number' ? m.balance : null,
               latencyMs: typeof m.latencyMs === 'number' ? m.latencyMs : null,
               success: typeof m.success === 'boolean' ? m.success : null,
+              recordedAt: typeof m.recordedAt === 'string' ? m.recordedAt : null,
             })) : [];
             return [keyId, points] as const;
           } catch {
@@ -336,12 +350,14 @@ function BalanceTrendPanel({ groups, trends, totalBalance }: {
   totalBalance: number;
 }) {
   const chartData = useMemo(() => buildBalanceTrend(groups, trends), [groups, trends]);
+  const providerSummaries = useMemo(() => buildProviderBalanceSummaries(groups, trends), [groups, trends]);
   const availablePoints = chartData.filter((point) => point.balance != null);
   const first = availablePoints[0]?.balance ?? null;
   const last = availablePoints.at(-1)?.balance ?? null;
   const delta = first != null && last != null ? last - first : null;
   const minBalance = availablePoints.length ? Math.min(...availablePoints.map((point) => point.balance ?? 0)) : null;
   const maxBalance = availablePoints.length ? Math.max(...availablePoints.map((point) => point.balance ?? 0)) : null;
+  const totalSpentToday = providerSummaries.reduce((sum, item) => sum + item.spentToday, 0);
 
   return (
     <section className="overflow-hidden rounded-2xl bg-[radial-gradient(circle_at_top_left,hsl(var(--primary)/0.14),transparent_34%),linear-gradient(135deg,hsl(var(--card)),hsl(var(--muted)/0.36))] p-5 shadow-sm ring-1 ring-border/40">
@@ -355,28 +371,61 @@ function BalanceTrendPanel({ groups, trends, totalBalance }: {
             {formatCurrency(totalBalance)}
           </div>
         </div>
-        <div className="grid min-w-44 grid-cols-3 gap-2 text-right text-xs">
+        <div className="grid min-w-56 grid-cols-4 gap-2 text-right text-xs">
+          <TrendMiniStat label="今日消耗" value={formatCurrency(totalSpentToday)} tone={totalSpentToday > 0 ? 'warn' : 'neutral'} />
           <TrendMiniStat label="变化" value={delta == null ? '—' : `${delta >= 0 ? '+' : ''}${formatCurrency(delta)}`} tone={delta == null || delta === 0 ? 'neutral' : delta > 0 ? 'good' : 'bad'} />
           <TrendMiniStat label="最低" value={minBalance == null ? '—' : formatCurrency(minBalance)} />
           <TrendMiniStat label="最高" value={maxBalance == null ? '—' : formatCurrency(maxBalance)} />
         </div>
       </div>
 
-      <div className="mt-5 h-44">
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+        <div className="flex items-center gap-4">
+          <span className="inline-flex items-center gap-1.5"><span className="size-2 rounded-full bg-blue-500" />余额变化</span>
+          <span className="inline-flex items-center gap-1.5"><span className="size-2 rounded-full bg-amber-500" />消耗趋势</span>
+        </div>
+        <span>最近 7 天</span>
+      </div>
+
+      <div className="mt-3 h-52">
         {availablePoints.length === 0 ? (
           <div className="flex h-full items-center justify-center rounded-xl bg-background/40 text-sm text-muted-foreground">
             暂无余额历史
           </div>
         ) : (
           <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={chartData} margin={{ top: 12, right: 4, bottom: 0, left: 4 }}>
+            <ComposedChart data={chartData} margin={{ top: 12, right: 6, bottom: 0, left: 0 }}>
               <defs>
                 <linearGradient id="dashboardBalanceGradient" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="rgb(16 185 129)" stopOpacity={0.35} />
-                  <stop offset="100%" stopColor="rgb(16 185 129)" stopOpacity={0.02} />
+                  <stop offset="0%" stopColor="rgb(59 130 246)" stopOpacity={0.32} />
+                  <stop offset="100%" stopColor="rgb(59 130 246)" stopOpacity={0.02} />
                 </linearGradient>
               </defs>
-              <YAxis domain={['auto', 'auto']} hide />
+              <CartesianGrid vertical={false} strokeDasharray="4 4" className="stroke-border" strokeOpacity={0.55} />
+              <XAxis
+                dataKey="label"
+                tick={{ fontSize: 11, fill: 'hsl(var(--muted-foreground))' }}
+                tickLine={false}
+                axisLine={false}
+                minTickGap={16}
+              />
+              <YAxis
+                yAxisId="balance"
+                width={42}
+                tick={{ fontSize: 11, fill: 'hsl(var(--muted-foreground))' }}
+                tickLine={false}
+                axisLine={false}
+                tickFormatter={(value) => compactCurrency(Number(value))}
+              />
+              <YAxis
+                yAxisId="spent"
+                orientation="right"
+                width={42}
+                tick={{ fontSize: 11, fill: 'hsl(var(--muted-foreground))' }}
+                tickLine={false}
+                axisLine={false}
+                tickFormatter={(value) => compactCurrency(Number(value))}
+              />
               <Tooltip
                 cursor={{ stroke: 'hsl(var(--border))', strokeDasharray: '3 3' }}
                 contentStyle={{
@@ -385,37 +434,84 @@ function BalanceTrendPanel({ groups, trends, totalBalance }: {
                   border: '1px solid hsl(var(--border))',
                   background: 'hsl(var(--popover))',
                 }}
-                formatter={(value) => (typeof value === 'number' ? formatCurrency(value) : '—')}
-                labelFormatter={() => '余额'}
+                formatter={(value, name) => [
+                  typeof value === 'number' ? formatCurrency(value) : '—',
+                  name === 'balance' ? '余额' : '消耗',
+                ]}
               />
               <Area
+                yAxisId="balance"
                 type="monotone"
                 dataKey="balance"
-                stroke="rgb(16 185 129)"
-                strokeWidth={2.5}
+                stroke="rgb(59 130 246)"
+                strokeWidth={0}
                 fill="url(#dashboardBalanceGradient)"
                 dot={false}
                 connectNulls
               />
-            </AreaChart>
+              <Line
+                yAxisId="balance"
+                type="monotone"
+                dataKey="balance"
+                stroke="rgb(59 130 246)"
+                strokeWidth={2.75}
+                dot={{ r: 3, strokeWidth: 2, fill: 'hsl(var(--background))' }}
+                activeDot={{ r: 5 }}
+                connectNulls
+              />
+              <Line
+                yAxisId="spent"
+                type="monotone"
+                dataKey="spent"
+                stroke="rgb(245 158 11)"
+                strokeWidth={2.25}
+                dot={{ r: 3, strokeWidth: 2, fill: 'hsl(var(--background))' }}
+                activeDot={{ r: 5 }}
+              />
+            </ComposedChart>
           </ResponsiveContainer>
         )}
       </div>
+
+      {providerSummaries.length > 0 ? (
+        <div className="mt-4 grid gap-x-5 gap-y-2 border-t border-border/50 pt-3 text-sm sm:grid-cols-2 xl:grid-cols-3">
+          {providerSummaries.map((item) => (
+            <ProviderBalanceItem key={item.id} item={item} />
+          ))}
+        </div>
+      ) : null}
     </section>
   );
 }
 
-function TrendMiniStat({ label, value, tone = 'neutral' }: { label: string; value: string; tone?: 'neutral' | 'good' | 'bad' }) {
+function TrendMiniStat({ label, value, tone = 'neutral' }: { label: string; value: string; tone?: 'neutral' | 'good' | 'warn' | 'bad' }) {
   return (
     <div className="rounded-xl bg-background/45 px-2.5 py-2">
       <div className="text-[11px] text-muted-foreground">{label}</div>
       <div className={cn(
         'mt-0.5 font-mono text-sm font-bold',
         tone === 'good' && 'text-emerald-500',
+        tone === 'warn' && 'text-amber-500',
         tone === 'bad' && 'text-rose-500',
       )}>
         {value}
       </div>
+    </div>
+  );
+}
+
+function ProviderBalanceItem({ item }: { item: ProviderBalanceSummary }) {
+  return (
+    <div className="flex min-w-0 items-center gap-2 rounded-xl bg-background/45 px-3 py-2">
+      <span className={cn('size-2 shrink-0 rounded-full shadow-[0_0_10px_currentColor]', getStatusColorClass(item.status))} />
+      <span className="min-w-0 flex-1 truncate font-semibold" title={item.name}>
+        {item.name}
+      </span>
+      <span className="shrink-0 font-mono font-bold text-emerald-500">{formatCurrency(item.balance)}</span>
+      <span className="shrink-0 text-xs text-muted-foreground">今日</span>
+      <span className={cn('shrink-0 font-mono text-sm font-bold', item.spentToday > 0 ? 'text-amber-500' : 'text-muted-foreground')}>
+        {formatCurrency(item.spentToday)}
+      </span>
     </div>
   );
 }
@@ -478,40 +574,29 @@ function AnnouncementPanel() {
 function UpstreamGroupSection({ group, trends }: { group: DashboardGroup; trends: Record<number, TrendPoint[]> }) {
   return (
     <section className="rounded-2xl bg-gradient-to-br from-card via-card to-muted/30 p-5 shadow-sm ring-1 ring-border/40">
-      <div className="mb-5 space-y-4">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="truncate text-lg font-semibold">{group.upstreamName}</span>
-              <Badge variant="secondary" className="border-0 bg-muted px-2 text-[11px]">{group.type === 'SUB2API' ? 'Sub2API' : 'New API'}</Badge>
-              {group.openIncidents > 0 ? <Badge variant="destructive" className="rounded-md text-[11px]">{group.openIncidents} 告警</Badge> : null}
-            </div>
-            <div className="mt-1 truncate text-xs text-muted-foreground" title={group.baseUrl}>{group.baseUrl}</div>
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-x-5 gap-y-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="truncate text-lg font-semibold">{group.upstreamName}</span>
+            <Badge variant="secondary" className="border-0 bg-muted px-2 text-[11px]">{group.type === 'SUB2API' ? 'Sub2API' : 'New API'}</Badge>
+            {group.openIncidents > 0 ? <Badge variant="destructive" className="rounded-md text-[11px]">{group.openIncidents} 告警</Badge> : null}
           </div>
-          <div className="shrink-0 text-right">
+          <div className="mt-1 truncate text-xs text-muted-foreground" title={group.baseUrl}>{group.baseUrl}</div>
+        </div>
+
+        <div className="flex flex-wrap items-center justify-end gap-x-4 gap-y-2">
+          <InlineMetric label="可用" value={`${group.usableCount}/${group.items.length}`} strong={group.availabilityPct >= 80} />
+          <InlineMetric label="倍率" value={`${group.knownMultiplierCount}/${group.items.length}`} strong={group.knownMultiplierCount === group.items.length} />
+          <InlineMetric label="均延迟" value={group.avgLatencyMs != null ? `${group.avgLatencyMs}ms` : '—'} />
+          <InlineMetric label="可用率" value={`${group.availabilityPct}%`} strong={group.availabilityPct >= 80} />
+          <div className="min-w-24 border-l border-border/50 pl-4 text-right">
             <div className="text-[11px] text-muted-foreground">余额</div>
             <div className={cn(
-              'text-3xl font-black tracking-normal text-emerald-500 drop-shadow-[0_0_14px_rgba(16,185,129,0.35)]',
+              'text-3xl font-black leading-none tracking-normal text-emerald-500 drop-shadow-[0_0_14px_rgba(16,185,129,0.35)]',
               group.totalBalance <= 0 && 'text-destructive drop-shadow-[0_0_14px_rgba(239,68,68,0.35)]',
             )}>
               {formatCurrency(group.totalBalance)}
             </div>
-          </div>
-        </div>
-
-        <div>
-          <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground sm:grid-cols-4">
-            <MetricPill label="可用" value={`${group.usableCount}/${group.items.length}`} strong={group.availabilityPct >= 80} />
-            <MetricPill label="倍率" value={`${group.knownMultiplierCount}/${group.items.length}`} strong={group.knownMultiplierCount === group.items.length} />
-            <MetricPill label="均延迟" value={group.avgLatencyMs != null ? `${group.avgLatencyMs}ms` : '—'} />
-            <MetricPill label="可用率" value={`${group.availabilityPct}%`} strong={group.availabilityPct >= 80} />
-          </div>
-          <AvailabilityBar group={group} />
-          <div className="mt-2 flex flex-wrap justify-end gap-2 text-[11px] text-muted-foreground">
-            <span>在线 {group.onlineCount}</span>
-            <span>降级 {group.degradedCount}</span>
-            <span>离线 {group.offlineCount}</span>
-            {group.unknownCount > 0 ? <span>未知 {group.unknownCount}</span> : null}
           </div>
         </div>
       </div>
@@ -524,33 +609,11 @@ function UpstreamGroupSection({ group, trends }: { group: DashboardGroup; trends
   );
 }
 
-function MetricPill({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
+function InlineMetric({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
   return (
-    <div className="rounded-xl bg-background/55 px-3 py-2 shadow-inner shadow-black/[0.03]">
-      <div>{label}</div>
-      <div className={cn('mt-0.5 text-base font-bold', strong ? 'text-success drop-shadow-[0_0_10px_rgba(34,197,94,0.35)]' : 'text-foreground')}>{value}</div>
-    </div>
-  );
-}
-
-function AvailabilityBar({ group }: { group: DashboardGroup }) {
-  const total = Math.max(group.items.length, 1);
-  const parts = [
-    { key: 'online', value: group.onlineCount, className: 'bg-success' },
-    { key: 'degraded', value: group.degradedCount, className: 'bg-warning' },
-    { key: 'offline', value: group.offlineCount, className: 'bg-destructive' },
-    { key: 'unknown', value: group.unknownCount, className: 'bg-muted-foreground/35' },
-  ].filter((part) => part.value > 0);
-
-  return (
-    <div className="mt-3 flex h-2.5 overflow-hidden rounded-full bg-background/70 shadow-inner">
-      {parts.map((part) => (
-        <div
-          key={part.key}
-          className={part.className}
-          style={{ width: `${Math.max(4, (part.value / total) * 100)}%` }}
-        />
-      ))}
+    <div className="min-w-14 text-right">
+      <div className="text-[11px] text-muted-foreground">{label}</div>
+      <div className={cn('mt-0.5 text-base font-black leading-none', strong ? 'text-success drop-shadow-[0_0_10px_rgba(34,197,94,0.35)]' : 'text-foreground')}>{value}</div>
     </div>
   );
 }
@@ -788,35 +851,117 @@ function isUsableStatus(status: string): boolean {
 }
 
 function buildBalanceTrend(groups: DashboardGroup[], trends: Record<number, TrendPoint[]>): BalanceChartPoint[] {
-  const maxPoints = 60;
-  const series = groups.map((group) => {
-    const balanceKeyId = group.balanceKeyId ?? group.items[0]?.keyId;
-    return balanceKeyId ? (trends[balanceKeyId] || []).filter((point) => point.balance != null).slice(-maxPoints) : [];
-  }).filter((points) => points.length > 0);
+  const buckets = buildRecentDateBuckets(7);
+  const series = groups.map((group) => getGroupBalanceSeries(group, trends));
 
-  if (series.length === 0) return [];
+  return buckets.map((bucket, index) => {
+    const nextStart = buckets[index + 1]?.start ?? new Date();
+    let balanceTotal = 0;
+    let balanceCount = 0;
+    let spentTotal = 0;
 
-  const length = Math.max(...series.map((points) => points.length));
-  return Array.from({ length }, (_, index) => {
-    const offset = length - index;
-    let total = 0;
-    let count = 0;
     for (const points of series) {
-      const point = points[points.length - offset];
-      if (point?.balance != null) {
-        total += point.balance;
-        count += 1;
+      const lastPoint = findLastBalanceBefore(points, nextStart);
+      if (lastPoint?.balance != null) {
+        balanceTotal += lastPoint.balance;
+        balanceCount += 1;
       }
+      spentTotal += calculateSpentBetween(points, bucket.start, nextStart);
     }
+
     return {
-      index,
-      balance: count > 0 ? Math.round(total * 100) / 100 : null,
+      label: bucket.label,
+      balance: balanceCount > 0 ? roundMoney(balanceTotal) : null,
+      spent: roundMoney(spentTotal),
     };
   });
 }
 
 function formatCurrency(value: number): string {
   return `$${value.toFixed(2)}`;
+}
+
+function compactCurrency(value: number): string {
+  if (!Number.isFinite(value)) return '$0';
+  if (Math.abs(value) >= 1000) return `$${(value / 1000).toFixed(1)}k`;
+  if (Math.abs(value) >= 100) return `$${value.toFixed(0)}`;
+  if (Math.abs(value) >= 10) return `$${value.toFixed(1)}`;
+  return `$${value.toFixed(0)}`;
+}
+
+function buildProviderBalanceSummaries(groups: DashboardGroup[], trends: Record<number, TrendPoint[]>): ProviderBalanceSummary[] {
+  const todayStart = startOfDay(new Date());
+  return groups.map((group) => {
+    const points = getGroupBalanceSeries(group, trends);
+    return {
+      id: group.upstreamId,
+      name: group.upstreamName,
+      status: group.availabilityPct >= 80 ? 'ONLINE' : group.usableCount > 0 ? 'DEGRADED' : 'OFFLINE',
+      balance: group.totalBalance,
+      spentToday: roundMoney(calculateSpentBetween(points, todayStart, new Date())),
+    };
+  });
+}
+
+function getGroupBalanceSeries(group: DashboardGroup, trends: Record<number, TrendPoint[]>): Array<{ balance: number; recordedAt: Date }> {
+  const balanceKeyId = group.balanceKeyId ?? group.items[0]?.keyId;
+  if (!balanceKeyId) return [];
+
+  return (trends[balanceKeyId] || [])
+    .filter((point): point is TrendPoint & { balance: number; recordedAt: string } => (
+      point.balance != null && typeof point.recordedAt === 'string'
+    ))
+    .map((point) => ({ balance: point.balance, recordedAt: new Date(point.recordedAt) }))
+    .filter((point) => Number.isFinite(point.recordedAt.getTime()))
+    .sort((left, right) => left.recordedAt.getTime() - right.recordedAt.getTime());
+}
+
+function buildRecentDateBuckets(days: number): Array<{ start: Date; label: string }> {
+  const today = startOfDay(new Date());
+  return Array.from({ length: days }, (_, index) => {
+    const start = new Date(today);
+    start.setDate(today.getDate() - (days - 1 - index));
+    return {
+      start,
+      label: `${start.getMonth() + 1}月${start.getDate()}日`,
+    };
+  });
+}
+
+function findLastBalanceBefore(points: Array<{ balance: number; recordedAt: Date }>, before: Date): { balance: number; recordedAt: Date } | null {
+  for (let index = points.length - 1; index >= 0; index -= 1) {
+    if (points[index].recordedAt < before) return points[index];
+  }
+  return null;
+}
+
+function calculateSpentBetween(points: Array<{ balance: number; recordedAt: Date }>, start: Date, end: Date): number {
+  let previous: number | null = null;
+  let spent = 0;
+
+  for (const point of points) {
+    if (point.recordedAt < start) {
+      previous = point.balance;
+      continue;
+    }
+    if (point.recordedAt >= end) break;
+    if (previous != null && point.balance < previous) {
+      spent += previous - point.balance;
+    }
+    previous = point.balance;
+  }
+
+  return spent;
+}
+
+function startOfDay(value: Date): Date {
+  const date = new Date(value);
+  date.setHours(0, 0, 0, 0);
+  return date;
+}
+
+function roundMoney(value: number): number {
+  return Math.round(value * 100) / 100;
 }
 
 function timeAgo(iso: string): string {
@@ -840,4 +985,12 @@ function getSeverityClass(severity: string): string {
   if (severity === 'CRITICAL') return 'text-rose-500';
   if (severity === 'WARNING') return 'text-amber-500';
   return 'text-cyan-500';
+}
+
+function getStatusColorClass(status: string): string {
+  const normalized = normalizeStatus(status);
+  if (normalized === 'ONLINE') return 'bg-emerald-500 text-emerald-500';
+  if (normalized === 'DEGRADED') return 'bg-amber-500 text-amber-500';
+  if (normalized === 'OFFLINE') return 'bg-rose-500 text-rose-500';
+  return 'bg-muted-foreground text-muted-foreground';
 }
