@@ -19,7 +19,7 @@ const defaultRules = [
 const defaultSettings: Record<string, string> = {
   light_interval_minutes: '1',
   heavy_interval_minutes: '15',
-  test_model: 'gpt-4o-mini',
+  test_model: 'gpt-5.5',
   test_timeout_ms: '15000',
   retention_days: '90',
   timezone: 'Asia/Shanghai',

@@ -657,7 +657,7 @@ function SystemTab() {
             <Field id="test-model" label="默认测速模型">
               <Input
                 id="test-model"
-                value={settings.test_model != null ? settings.test_model : 'gpt-4o-mini'}
+                value={settings.test_model != null ? settings.test_model : 'gpt-5.5'}
                 onChange={(e) => update('test_model', e.target.value)}
               />
             </Field>

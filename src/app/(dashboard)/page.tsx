@@ -56,6 +56,12 @@ interface DashboardGroup {
   avgLatencyMs: number | null;
   openIncidents: number;
   knownMultiplierCount: number;
+  onlineCount: number;
+  degradedCount: number;
+  offlineCount: number;
+  unknownCount: number;
+  usableCount: number;
+  availabilityPct: number;
 }
 
 export default function DashboardPage() {
@@ -229,32 +235,43 @@ function StatCard({ label, value, sub, icon: Icon, highlight }: {
 
 function UpstreamGroupSection({ group, trends }: { group: DashboardGroup; trends: Record<number, Record<string, number | null>[]> }) {
   return (
-    <section className="rounded-xl border bg-card/60 p-3 shadow-sm">
-      <div className="mb-3 flex flex-wrap items-start justify-between gap-3 px-1">
+    <section className="rounded-xl border bg-card/80 p-4 shadow-sm">
+      <div className="mb-4 flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <span className="truncate text-base font-semibold">{group.upstreamName}</span>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="truncate text-lg font-semibold">{group.upstreamName}</span>
             <Badge variant="secondary" className="rounded-md text-[11px]">{group.type === 'SUB2API' ? 'Sub2API' : 'New API'}</Badge>
             {group.openIncidents > 0 ? <Badge variant="destructive" className="rounded-md text-[11px]">{group.openIncidents} 告警</Badge> : null}
+            <Badge
+              variant="outline"
+              className={cn(
+                'rounded-md border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 dark:text-emerald-300',
+                group.totalBalance <= 0 && 'border-destructive/20 bg-destructive/10 text-destructive',
+              )}
+            >
+              余额 ${group.totalBalance.toFixed(2)}
+            </Badge>
           </div>
           <div className="mt-1 truncate text-xs text-muted-foreground" title={group.baseUrl}>{group.baseUrl}</div>
+          <div className="mt-3 flex flex-wrap gap-1.5">
+            {group.items.map((item) => (
+              <MultiplierBadge key={item.keyId} item={item} compact />
+            ))}
+          </div>
         </div>
-        <div className="grid grid-cols-4 gap-3 text-right text-xs text-muted-foreground">
-          <div>
-            <div>分组</div>
-            <div className="mt-0.5 text-sm font-semibold text-foreground">{group.items.length}</div>
+        <div className="min-w-[280px] flex-1 sm:max-w-[520px]">
+          <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground sm:grid-cols-4">
+            <MetricPill label="可用" value={`${group.usableCount}/${group.items.length}`} strong={group.availabilityPct >= 80} />
+            <MetricPill label="倍率" value={`${group.knownMultiplierCount}/${group.items.length}`} strong={group.knownMultiplierCount === group.items.length} />
+            <MetricPill label="均延迟" value={group.avgLatencyMs != null ? `${group.avgLatencyMs}ms` : '—'} />
+            <MetricPill label="可用率" value={`${group.availabilityPct}%`} strong={group.availabilityPct >= 80} />
           </div>
-          <div>
-            <div>余额</div>
-            <div className="mt-0.5 text-sm font-semibold text-foreground">${group.totalBalance.toFixed(2)}</div>
-          </div>
-          <div>
-            <div>均延迟</div>
-            <div className="mt-0.5 text-sm font-semibold text-foreground">{group.avgLatencyMs != null ? `${group.avgLatencyMs}ms` : '—'}</div>
-          </div>
-          <div>
-            <div>倍率</div>
-            <div className="mt-0.5 text-sm font-semibold text-foreground">{group.knownMultiplierCount}/{group.items.length}</div>
+          <AvailabilityBar group={group} />
+          <div className="mt-2 flex flex-wrap justify-end gap-2 text-[11px] text-muted-foreground">
+            <span>在线 {group.onlineCount}</span>
+            <span>降级 {group.degradedCount}</span>
+            <span>离线 {group.offlineCount}</span>
+            {group.unknownCount > 0 ? <span>未知 {group.unknownCount}</span> : null}
           </div>
         </div>
       </div>
@@ -267,14 +284,44 @@ function UpstreamGroupSection({ group, trends }: { group: DashboardGroup; trends
   );
 }
 
+function MetricPill({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
+  return (
+    <div className="rounded-lg border bg-background/60 px-2 py-1.5">
+      <div>{label}</div>
+      <div className={cn('mt-0.5 text-sm font-semibold', strong ? 'text-success' : 'text-foreground')}>{value}</div>
+    </div>
+  );
+}
+
+function AvailabilityBar({ group }: { group: DashboardGroup }) {
+  const total = Math.max(group.items.length, 1);
+  const parts = [
+    { key: 'online', value: group.onlineCount, className: 'bg-success' },
+    { key: 'degraded', value: group.degradedCount, className: 'bg-warning' },
+    { key: 'offline', value: group.offlineCount, className: 'bg-destructive' },
+    { key: 'unknown', value: group.unknownCount, className: 'bg-muted-foreground/35' },
+  ].filter((part) => part.value > 0);
+
+  return (
+    <div className="mt-3 flex h-2 overflow-hidden rounded-full bg-muted">
+      {parts.map((part) => (
+        <div
+          key={part.key}
+          className={part.className}
+          style={{ width: `${Math.max(4, (part.value / total) * 100)}%` }}
+        />
+      ))}
+    </div>
+  );
+}
+
 function GroupCard({ item, trend }: { item: DashboardItem; trend: Record<string, number | null>[] }) {
   const displayName = getKeyDisplayName(item);
   const groupName = getKeyGroupLabel(item);
-  const multiplier = getDisplayMultiplier(item);
 
   return (
     <Link href={`/upstreams/${item.upstreamId}`} className="block">
-      <Card className="h-full transition-colors hover:border-foreground/20">
+      <Card className={cn('h-full transition-colors hover:border-foreground/20', item.openIncidents > 0 && 'border-destructive/40')}>
         <CardContent className="p-4">
           <div className="flex items-start justify-between">
             <div className="min-w-0 flex-1">
@@ -289,23 +336,20 @@ function GroupCard({ item, trend }: { item: DashboardItem; trend: Record<string,
                 ) : null}
               </div>
             </div>
-            {item.openIncidents > 0 && (
-              <Badge variant="destructive" className="text-xs">{item.openIncidents}</Badge>
-            )}
+            <StatusChip status={item.status} incidents={item.openIncidents} />
           </div>
-          <div className="mt-3 grid grid-cols-3 gap-2 text-sm">
-            <div>
-              <div className="text-xs text-muted-foreground">余额</div>
-              <div className="font-semibold">{item.balance != null ? `$${item.balance.toFixed(2)}` : '—'}</div>
-            </div>
+          <div className="mt-3 grid grid-cols-2 gap-2 text-sm sm:grid-cols-3">
             <div>
               <div className="text-xs text-muted-foreground">延迟</div>
               <div className="font-semibold">{item.latencyMs != null ? `${item.latencyMs}ms` : '—'}</div>
             </div>
             <div>
               <div className="text-xs text-muted-foreground">倍率</div>
-              <div className="font-semibold">{multiplier.value}</div>
-              <div className="mt-0.5 text-[10px] leading-none text-muted-foreground">{multiplier.source}</div>
+              <MultiplierBadge item={item} />
+            </div>
+            <div className="sm:col-span-1">
+              <div className="text-xs text-muted-foreground">状态</div>
+              <div className="font-semibold">{normalizeStatus(item.status) === 'ONLINE' ? '可用' : normalizeStatus(item.status) === 'DEGRADED' ? '降级' : normalizeStatus(item.status) === 'OFFLINE' ? '离线' : '未知'}</div>
             </div>
           </div>
           <div className="mt-3"><Sparkline data={trend} dataKey="balance" color="hsl(var(--primary))" height={28} /></div>
@@ -319,6 +363,53 @@ function GroupCard({ item, trend }: { item: DashboardItem; trend: Record<string,
   );
 }
 
+function StatusChip({ status, incidents }: { status: string; incidents: number }) {
+  const normalized = normalizeStatus(status);
+  const label = normalized === 'ONLINE' ? '可用' : normalized === 'DEGRADED' ? '降级' : normalized === 'OFFLINE' ? '离线' : '未知';
+  const className = normalized === 'ONLINE'
+    ? 'border-success/30 bg-success/10 text-success'
+    : normalized === 'DEGRADED'
+      ? 'border-warning/30 bg-warning/10 text-warning'
+      : normalized === 'OFFLINE'
+        ? 'border-destructive/30 bg-destructive/10 text-destructive'
+        : 'border-muted-foreground/20 bg-muted text-muted-foreground';
+
+  return (
+    <div className="flex shrink-0 flex-col items-end gap-1">
+      <Badge variant="outline" className={cn('rounded-md text-[11px]', className)}>{label}</Badge>
+      {incidents > 0 ? <Badge variant="destructive" className="rounded-md text-[10px]">{incidents} 告警</Badge> : null}
+    </div>
+  );
+}
+
+function MultiplierBadge({ item, compact = false }: { item: DashboardItem; compact?: boolean }) {
+  const multiplier = getDisplayMultiplier(item);
+  const isMissing = multiplier.value === '未获取';
+  const className = multiplier.source === '官方同步'
+    ? 'border-success/25 bg-success/10 text-success'
+    : multiplier.source === '名称解析'
+      ? 'border-primary/25 bg-primary/10 text-primary'
+      : 'border-muted-foreground/20 bg-muted text-muted-foreground';
+  const label = compact ? `${getKeyDisplayName(item)} ${multiplier.value}` : multiplier.value;
+
+  return (
+    <div className="inline-flex min-w-0 flex-col items-start">
+      <Badge
+        variant="outline"
+        className={cn('max-w-full rounded-md px-1.5 py-0.5 font-mono text-[11px]', className)}
+        title={`${getKeyDisplayName(item)} · ${multiplier.value} · ${multiplier.source}`}
+      >
+        <span className="truncate">{label}</span>
+      </Badge>
+      {!compact && (
+        <span className={cn('mt-0.5 text-[10px] leading-none', isMissing ? 'text-muted-foreground' : 'text-muted-foreground')}>
+          {multiplier.source}
+        </span>
+      )}
+    </div>
+  );
+}
+
 function groupDashboardItems(items: DashboardItem[]): DashboardGroup[] {
   const map = new Map<number, DashboardGroup>();
 
@@ -329,6 +420,11 @@ function groupDashboardItems(items: DashboardItem[]): DashboardGroup[] {
       existing.totalBalance += item.balance || 0;
       existing.openIncidents += item.openIncidents;
       if (hasDisplayMultiplier(item)) existing.knownMultiplierCount += 1;
+      if (isOnlineStatus(item.status)) existing.onlineCount += 1;
+      if (normalizeStatus(item.status) === 'DEGRADED') existing.degradedCount += 1;
+      if (normalizeStatus(item.status) === 'OFFLINE') existing.offlineCount += 1;
+      if (normalizeStatus(item.status) === 'UNKNOWN') existing.unknownCount += 1;
+      if (isUsableStatus(item.status)) existing.usableCount += 1;
       continue;
     }
 
@@ -342,6 +438,12 @@ function groupDashboardItems(items: DashboardItem[]): DashboardGroup[] {
       avgLatencyMs: null,
       openIncidents: item.openIncidents,
       knownMultiplierCount: hasDisplayMultiplier(item) ? 1 : 0,
+      onlineCount: isOnlineStatus(item.status) ? 1 : 0,
+      degradedCount: normalizeStatus(item.status) === 'DEGRADED' ? 1 : 0,
+      offlineCount: normalizeStatus(item.status) === 'OFFLINE' ? 1 : 0,
+      unknownCount: normalizeStatus(item.status) === 'UNKNOWN' ? 1 : 0,
+      usableCount: isUsableStatus(item.status) ? 1 : 0,
+      availabilityPct: 0,
     });
   }
 
@@ -356,6 +458,7 @@ function groupDashboardItems(items: DashboardItem[]): DashboardGroup[] {
       avgLatencyMs: latencyValues.length
         ? Math.round(latencyValues.reduce((sum, value) => sum + value, 0) / latencyValues.length)
         : null,
+      availabilityPct: Math.round((group.usableCount / Math.max(group.items.length, 1)) * 100),
     };
   });
 }
@@ -387,6 +490,21 @@ function parseMultiplierFromText(values: Array<string | null | undefined>): stri
     if (match) return `${Number(match[1])}x`;
   }
   return null;
+}
+
+function normalizeStatus(status: string): 'ONLINE' | 'DEGRADED' | 'OFFLINE' | 'UNKNOWN' {
+  const normalized = status.toUpperCase();
+  if (normalized === 'ONLINE' || normalized === 'DEGRADED' || normalized === 'OFFLINE') return normalized;
+  return 'UNKNOWN';
+}
+
+function isOnlineStatus(status: string): boolean {
+  return normalizeStatus(status) === 'ONLINE';
+}
+
+function isUsableStatus(status: string): boolean {
+  const normalized = normalizeStatus(status);
+  return normalized === 'ONLINE' || normalized === 'DEGRADED';
 }
 
 function timeAgo(iso: string): string {

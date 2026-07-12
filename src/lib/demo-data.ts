@@ -127,17 +127,17 @@ export function readDemoSeedEnvironment(
 }
 
 const UPSTREAMS: DemoUpstreamRecord[] = [
-  upstream('aurora', 'Aurora Relay', 'NEW_API', 'ONLINE', 120, 'gpt-4o-mini'),
+  upstream('aurora', 'Aurora Relay', 'NEW_API', 'ONLINE', 120, 'gpt-5.5'),
   upstream('borealis', 'Borealis Gateway', 'SUB2API', 'DEGRADED', 110, 'claude-3-5-haiku'),
-  upstream('citrine', 'Citrine Cloud', 'NEW_API', 'OFFLINE', 100, 'gpt-4o-mini'),
+  upstream('citrine', 'Citrine Cloud', 'NEW_API', 'OFFLINE', 100, 'gpt-5.5'),
   upstream('dahlia', 'Dahlia Edge', 'SUB2API', 'UNKNOWN', 90, 'gemini-2.0-flash'),
-  upstream('ember', 'Ember AI', 'NEW_API', 'ONLINE', 80, 'gpt-4o-mini'),
+  upstream('ember', 'Ember AI', 'NEW_API', 'ONLINE', 80, 'gpt-5.5'),
   upstream('fjord', 'Fjord Bridge', 'SUB2API', 'ONLINE', 70, 'claude-3-5-haiku'),
-  upstream('grove', 'Grove Models', 'NEW_API', 'DEGRADED', 60, 'gpt-4o-mini'),
+  upstream('grove', 'Grove Models', 'NEW_API', 'DEGRADED', 60, 'gpt-5.5'),
   upstream('harbor', 'Harbor Route', 'SUB2API', 'ONLINE', 50, 'gemini-2.0-flash'),
-  upstream('ion', 'Ion Compute', 'NEW_API', 'OFFLINE', 40, 'gpt-4o-mini'),
+  upstream('ion', 'Ion Compute', 'NEW_API', 'OFFLINE', 40, 'gpt-5.5'),
   upstream('juniper', 'Juniper Hub', 'SUB2API', 'ONLINE', 30, 'claude-3-5-haiku'),
-  upstream('kepler', 'Kepler Proxy', 'NEW_API', 'UNKNOWN', 20, 'gpt-4o-mini'),
+  upstream('kepler', 'Kepler Proxy', 'NEW_API', 'UNKNOWN', 20, 'gpt-5.5'),
   upstream('lumen', 'Lumen Relay', 'SUB2API', 'DEGRADED', 10, 'gemini-2.0-flash'),
 ];
 
@@ -386,7 +386,7 @@ export function buildDemoDataset(
     settings: {
       light_interval_minutes: '1',
       heavy_interval_minutes: '15',
-      test_model: 'gpt-4o-mini',
+      test_model: 'gpt-5.5',
       test_timeout_ms: '15000',
       retention_days: '90',
       timezone: 'Asia/Shanghai',

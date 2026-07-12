@@ -5,6 +5,7 @@
  * DEMO_ADMIN_PASSWORD='<strong-password>' DEMO_CRON_SECRET='<random-secret>' pnpm db:seed:demo
  */
 import bcrypt from 'bcryptjs';
+import type { Prisma } from '@prisma/client';
 import { buildDemoDataset, readDemoSeedEnvironment } from '../src/lib/demo-data';
 
 async function main() {
@@ -27,7 +28,7 @@ async function main() {
 
   try {
     await prisma.$transaction(
-      async (tx) => {
+      async (tx: Prisma.TransactionClient) => {
       await tx.user.upsert({
         where: { username: 'demo' },
         update: { password: passwordHash },

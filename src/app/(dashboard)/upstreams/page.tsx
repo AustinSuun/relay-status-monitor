@@ -229,7 +229,7 @@ function UpstreamFormDialog({ upstream, onClose, onSaved }: {
             </div>
             <div className="space-y-1.5">
               <Label>默认测速模型</Label>
-              <Input value={testModel} onChange={(e) => setTestModel(e.target.value)} placeholder="gpt-4o-mini" />
+              <Input value={testModel} onChange={(e) => setTestModel(e.target.value)} placeholder="gpt-5.5" />
             </div>
           </div>
           <div className="flex items-center gap-2">

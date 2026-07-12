@@ -69,7 +69,7 @@ export async function getCollectConfig() {
   const [lightMin, heavyMin, testModel, timeoutMs, retentionDays] = await Promise.all([
     getSettingNumber(SettingKeys.LIGHT_INTERVAL_MIN, 1),
     getSettingNumber(SettingKeys.HEAVY_INTERVAL_MIN, 15),
-    getSetting(SettingKeys.TEST_MODEL, 'gpt-4o-mini'),
+    getSetting(SettingKeys.TEST_MODEL, 'gpt-5.5'),
     getSettingNumber(SettingKeys.TEST_TIMEOUT_MS, 15000),
     getSettingNumber(SettingKeys.RETENTION_DAYS, 90),
   ]);
